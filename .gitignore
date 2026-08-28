@@ -1,0 +1,9 @@
+.env
+dist/
+toyota-mcp-doctor-dump/
+__pycache__/
+*.py[cov]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "toyota": {
+      "command": "uv",
+      "args": ["run", "toyota-mcp"]
+    }
+  }
+}

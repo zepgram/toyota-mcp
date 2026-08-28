@@ -1,0 +1,193 @@
+<!-- mcp-name: io.github.zepgram/toyota -->
+
+# toyota-mcp
+
+Ask your Toyota anything — read-only [MCP](https://modelcontextprotocol.io) server for MyToyota Europe.
+
+[![PyPI](https://img.shields.io/pypi/v/toyota-mcp)](https://pypi.org/project/toyota-mcp/)
+[![CI](https://github.com/zepgram/toyota-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/zepgram/toyota-mcp/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/toyota-mcp)](https://pypi.org/project/toyota-mcp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+Connect your MyToyota Europe account to Claude (or any MCP client) and ask in
+plain language: *"how much range is left?"*, *"where is the car?"*, *"what did
+the last trip consume?"*, *"what's my EV share this month?"*.
+
+Built on [pytoyoda](https://github.com/pytoyoda/pytoyoda), the community-maintained
+client for Toyota's European Connected Services.
+
+## Requirements
+
+- A **MyToyota Europe** account (the API covers Europe only — North America and
+  Japan use entirely different systems).
+- The account must **not have MFA/2FA enabled** (unsupported by the underlying API).
+- The vehicle must appear in the MyToyota mobile app.
+- [`uv`](https://docs.astral.sh/uv/) for the zero-install `uvx` launcher.
+
+> **Unofficial API.** Toyota can change or break this API at any time without
+> notice. All API access is isolated behind pytoyoda, which historically absorbs
+> such breakage within days.
+
+## Quickstart
+
+### Claude Desktop
+
+Add to `claude_desktop_config.json` (macOS:
+`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "toyota": {
+      "command": "uvx",
+      "args": ["toyota-mcp"],
+      "env": {
+        "TOYOTA_USERNAME": "you@example.com",
+        "TOYOTA_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+### Claude Code
+
+```bash
+claude mcp add --transport stdio toyota \
+  --env TOYOTA_USERNAME=you@example.com \
+  --env TOYOTA_PASSWORD=your-password \
+  -- uvx toyota-mcp
+```
+
+### First contact: the doctor
+
+Before wiring anything into an MCP host, check your setup from a terminal:
+
+```bash
+TOYOTA_USERNAME=you@example.com TOYOTA_PASSWORD=... uvx toyota-mcp doctor
+```
+
+It validates credentials, lists your vehicles, and prints which tools your
+specific car supports. Exit codes: `0` ok · `2` config · `3` auth ·
+`4` no vehicle · `5` API error.
+
+## Configuration
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `TOYOTA_USERNAME` | yes | — | MyToyota account email |
+| `TOYOTA_PASSWORD` | yes | — | MyToyota account password |
+| `TOYOTA_VIN` | no | — | Selects one vehicle when several share the account |
+| `TOYOTA_BRAND` | no | `T` | `T` Toyota, `L` Lexus |
+| `TOYOTA_USE_METRIC` | no | `true` | `false` switches to miles/gallons |
+
+A local `.env` file works too (see `.env.example`). Credentials never touch disk
+otherwise; tokens live in memory only.
+
+## Available tools
+
+All tools are **read-only** (`readOnlyHint: true`). Nothing here can unlock,
+start, or otherwise actuate the vehicle.
+
+| Tool | Example question | Key fields |
+|---|---|---|
+| `toyota_get_energy` | *Il reste combien d'autonomie ?* | fuel %, range (km/mi), battery or an explicit "not applicable" note |
+| `toyota_get_status` | *Is the car locked?* | doors/windows/trunk/hood, lock state, tri-state (`unknown` ≠ `open`) |
+| `toyota_get_location` | *Elle est où ?* | lat/lon, place label, Google Maps link |
+| `toyota_get_odometer` | *How many km on the clock?* | odometer with unit |
+| `toyota_get_last_trip` | *Conso du dernier trajet ?* | distance, duration, consumption, EV share, eco scores |
+| `toyota_get_trips` | *This week's trips?* | individual trips, newest first (≤ 92 days back) |
+| `toyota_get_trip_summary` | *Conso moyenne des 7 derniers jours ?* | rolling-window totals, recomputed L/100km, EV distance & time share |
+| `toyota_get_health` | *Any alerts on the car?* | warning lights, notifications, last recorded service |
+| `toyota_refresh_data` | *I just parked — refresh.* | bounded cloud re-fetch (never wakes the car) |
+
+## How fresh is the data?
+
+Toyota's cloud is **push-on-event**: the car uploads telemetry at ignition-off
+and its position when it parks. Polling faster returns the same payload, so
+this server caches snapshots for ~5 minutes and serializes all upstream calls
+(the gateway rate-limits bursts aggressively).
+
+Every response carries a `freshness` block:
+
+- `fetched_at` / `age_seconds` — when this server last read Toyota's cloud;
+- `source` — `live`, `cache`, or `stale_cache` (Toyota briefly unavailable,
+  serving last known data instead of failing);
+- `vehicle_reported_at` — the car-side timestamp, when Toyota provides one.
+
+`toyota_refresh_data` exists for the one real gap (you just parked and want the
+newest position) and is floor-limited to once per minute. It re-reads the
+cloud — it never wakes the car, so it cannot drain the 12V battery.
+
+## Powertrain coverage
+
+| Data | Full hybrid (self-charging) | PHEV / EV | Petrol/diesel |
+|---|---|---|---|
+| Fuel level & range | ✅ | ✅ | ✅ |
+| Doors/windows/locks | ✅ | ✅ | ✅ |
+| Location, odometer, health | ✅ | ✅ | ✅ |
+| Trips incl. **EV share** | ✅ | ✅ | ✅ (no EV share) |
+| Plug-in battery %, charging | — explicit "not applicable" note | ✅ | — |
+
+Toyota exposes **no traction-battery charge for self-charging hybrids** — it
+only exists on the in-car display. The tools say so explicitly instead of
+returning misleading nulls.
+
+## Limitations
+
+- Europe only (`ctpa-oneapi` — Toyota Connected Europe).
+- Accounts with MFA/2FA cannot authenticate.
+- Toyota retains roughly **12 months** of trip history server-side.
+- Lock/door status can lag reality; every answer self-reports its age.
+- Phase 1 is strictly read-only; remote commands are out of scope.
+
+## Troubleshooting
+
+| Message | What it means |
+|---|---|
+| `MyToyota sign-in failed…` | Wrong credentials, or MFA is enabled on the account. Login pauses 60 s between attempts. Run `uvx toyota-mcp doctor`. |
+| `…rate-limiting or temporarily unavailable…` | Transient — NOT an auth problem. The gateway 429s freely; retry in a minute. |
+| `Toyota appears to have changed this API endpoint…` | Toyota migrated a route. Update toyota-mcp / pytoyoda. |
+| `No parked location has been reported…` | The car has never pushed a position (or lacks the capability). |
+| `No vehicles are attached to this MyToyota account.` | Pair the car in the MyToyota mobile app first. |
+
+## Security & privacy
+
+- Credentials come from environment variables only; the password is held as a
+  `SecretStr` and never logged.
+- GPS coordinates, VINs and payloads are never written to logs.
+- No tokens or snapshots are persisted to disk.
+- `doctor --dump` output is recursively redacted, but review it manually before
+  sharing.
+
+## Development
+
+```bash
+git clone https://github.com/zepgram/toyota-mcp && cd toyota-mcp
+uv sync
+uv run pytest                       # 78 tests, no network
+uv run ruff check && uv run ruff format --check
+uv run mypy src tests
+```
+
+Tests fake Toyota at pytoyoda's own `controller_class` seam and exercise the
+real parsing pipeline against anonymized payloads — CI never touches Toyota.
+Pre-release, run the live smoke tests with real credentials:
+
+```bash
+uv run pytest -m live
+```
+
+Debug interactively with the MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector uvx toyota-mcp
+```
+
+Note for contributors (and their coding agents): this project uses MCP Python
+SDK **v2** — `MCPServer`, `mcp.server.mcpserver.Context`, `ToolError`. Most
+tutorials still show v1's `FastMCP` imports, which no longer exist.
+
+## License
+
+[MIT](LICENSE) © Benjamin Calef

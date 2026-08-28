@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
+from typing import Any, cast
+
+from toyota_mcp.models import (
+    FUEL_ONLY_BATTERY_NOTE,
+    FULL_HYBRID_BATTERY_NOTE,
+    DoorReport,
+    DoorsReport,
+    EnergyReport,
+    Freshness,
+    Quantity,
+    TripReport,
+    TripsReport,
+    TripSummaryReport,
+    _overall_lock,
+)
+
+
+def _freshness() -> Freshness:
+    return Freshness(fetched_at=datetime.now(timezone.utc), age_seconds=0, source="live")
+
+
+def _doors(*locks: str) -> DoorsReport:
+    reports = [DoorReport(state="closed", lock=cast(Any, lock)) for lock in locks]
+    return DoorsReport(
+        driver=reports[0],
+        passenger=reports[1],
+        driver_rear=reports[2],
+        passenger_rear=reports[3],
+        trunk=reports[4],
+    )
+
+
+def test_overall_lock_all_locked() -> None:
+    assert _overall_lock(_doors("locked", "locked", "locked", "locked", "locked")) == "locked"
+
+
+def test_overall_lock_one_unlocked() -> None:
+    assert _overall_lock(_doors("locked", "unlocked", "locked", "locked", "locked")) == "unlocked"
+
+
+def test_overall_lock_partial_sensors_still_locked() -> None:
+    assert _overall_lock(_doors("locked", "unknown", "locked", "unknown", "locked")) == "locked"
+
+
+def test_overall_lock_no_sensor() -> None:
+    assert _overall_lock(_doors("unknown", "unknown", "unknown", "unknown", "unknown")) == "unknown"
+
+
+def _dashboard(**overrides: Any) -> Any:
+    defaults: dict[str, Any] = {
+        "fuel_level": 55,
+        "fuel_range_with_unit": SimpleNamespace(value=420.0, unit="km"),
+        "range_with_unit": SimpleNamespace(value=460.0, unit="km"),
+        "battery_level": None,
+        "battery_range_with_unit": None,
+        "battery_range_with_ac_with_unit": None,
+        "charging_status": None,
+        "remaining_charge_time": None,
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def test_energy_full_hybrid_gets_explanatory_note() -> None:
+    report = EnergyReport.from_dashboard(_dashboard(), "full_hybrid", _freshness())
+    assert report.battery is None
+    assert report.battery_note == FULL_HYBRID_BATTERY_NOTE
+    assert report.fuel_level_percent == 55
+    assert report.fuel_range == Quantity(value=420.0, unit="km")
+    assert report.total_range == Quantity(value=460.0, unit="km")
+
+
+def test_energy_fuel_only_note() -> None:
+    report = EnergyReport.from_dashboard(_dashboard(), "fuel_only", _freshness())
+    assert report.battery is None
+    assert report.battery_note == FUEL_ONLY_BATTERY_NOTE
+
+
+def test_energy_phev_battery_populated() -> None:
+    dashboard = _dashboard(
+        battery_level=80.0,
+        battery_range_with_unit=SimpleNamespace(value=52.0, unit="km"),
+        charging_status="chargeComplete",
+        remaining_charge_time=timedelta(minutes=45),
+    )
+    report = EnergyReport.from_dashboard(dashboard, "plug_in_hybrid", _freshness())
+    assert report.battery is not None
+    assert report.battery.level_percent == 80.0
+    assert report.battery.range == Quantity(value=52.0, unit="km")
+    assert report.battery.charging_status == "chargeComplete"
+    assert report.battery.remaining_charge_minutes == 45.0
+    assert report.battery_note is None
+
+
+def _trip(**overrides: Any) -> Any:
+    defaults: dict[str, Any] = {
+        "start_time": datetime(2026, 8, 28, 8, 0, tzinfo=timezone.utc),
+        "end_time": datetime(2026, 8, 28, 8, 30, tzinfo=timezone.utc),
+        "duration": timedelta(minutes=30),
+        "distance": 22.0,
+        "fuel_consumed": 0.9,
+        "average_fuel_consumed": 4.1,
+        "ev_distance": 11.0,
+        "ev_duration": timedelta(minutes=18),
+        "score": 82.0,
+        "score_acceleration": 75.0,
+        "score_braking": 88.0,
+        "score_constant_speed": 61.0,
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def test_trip_report_units_and_ev_ratio() -> None:
+    report = TripReport.from_trip(_trip(), use_metric=True)
+    assert report.distance == Quantity(value=22.0, unit="km")
+    assert report.fuel_consumed == Quantity(value=0.9, unit="L")
+    assert report.average_consumption == Quantity(value=4.1, unit="L/100km")
+    assert report.ev_distance == Quantity(value=11.0, unit="km")
+    assert report.ev_ratio_percent == 50.0
+    assert report.duration_minutes == 30.0
+    assert report.ev_duration_minutes == 18.0
+
+
+def test_trip_report_imperial_units() -> None:
+    report = TripReport.from_trip(_trip(), use_metric=False)
+    assert report.distance is not None and report.distance.unit == "mi"
+    assert report.fuel_consumed is not None and report.fuel_consumed.unit == "gal"
+    assert report.average_consumption is not None
+    assert report.average_consumption.unit == "mpg"
+
+
+def test_trips_report_orders_newest_first_and_slices() -> None:
+    older = _trip(start_time=datetime(2026, 8, 20, 8, 0, tzinfo=timezone.utc))
+    newer = _trip(start_time=datetime(2026, 8, 28, 8, 0, tzinfo=timezone.utc))
+    report = TripsReport.from_trips(
+        [older, newer],
+        window_from=date(2026, 8, 15),
+        window_to=date(2026, 8, 29),
+        limit=1,
+        use_metric=True,
+        freshness=_freshness(),
+    )
+    assert report.returned_count == 1
+    assert report.trips[0].started_at == datetime(2026, 8, 28, 8, 0, tzinfo=timezone.utc)
+    assert report.note is None
+
+
+def test_trips_report_empty_window_is_typed_not_error() -> None:
+    report = TripsReport.from_trips(
+        [],
+        window_from=date(2026, 8, 15),
+        window_to=date(2026, 8, 29),
+        limit=10,
+        use_metric=True,
+        freshness=_freshness(),
+    )
+    assert report.trips == []
+    assert report.note is not None
+    assert "No trips recorded" in report.note
+
+
+def _summary(**overrides: Any) -> Any:
+    defaults: dict[str, Any] = {
+        "distance": 50.0,
+        "duration": timedelta(hours=1),
+        "fuel_consumed": 2.0,
+        "ev_distance": 25.0,
+        "ev_duration": timedelta(minutes=30),
+        "countries": ["FR"],
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def test_summary_recomputes_consumption_not_mean_of_means() -> None:
+    day_short = _summary(distance=10.0, fuel_consumed=1.0)
+    day_long = _summary(distance=90.0, fuel_consumed=2.0)
+    report = TripSummaryReport.from_daily_summaries(
+        [day_short, day_long],
+        window_from=date(2026, 8, 22),
+        window_to=date(2026, 8, 29),
+        use_metric=True,
+        freshness=_freshness(),
+    )
+    assert report.average_consumption == Quantity(value=3.0, unit="L/100km")
+    assert report.total_distance == Quantity(value=100.0, unit="km")
+
+
+def test_summary_ev_ratios_and_speed() -> None:
+    report = TripSummaryReport.from_daily_summaries(
+        [_summary(), _summary()],
+        window_from=date(2026, 8, 22),
+        window_to=date(2026, 8, 29),
+        use_metric=True,
+        freshness=_freshness(),
+    )
+    assert report.ev_ratio_percent == 50.0
+    assert report.ev_time_ratio_percent == 50.0
+    assert report.average_speed == Quantity(value=50.0, unit="km/h")
+    assert report.days_with_driving == 2
+    assert report.countries == ["FR"]
+
+
+def test_summary_empty_window_zeroed_with_note() -> None:
+    report = TripSummaryReport.from_daily_summaries(
+        [],
+        window_from=date(2026, 8, 22),
+        window_to=date(2026, 8, 29),
+        use_metric=True,
+        freshness=_freshness(),
+    )
+    assert report.total_distance.value == 0.0
+    assert report.average_consumption is None
+    assert report.average_speed is None
+    assert report.days_with_driving == 0
+    assert report.note is not None
+    assert "No trips recorded" in report.note

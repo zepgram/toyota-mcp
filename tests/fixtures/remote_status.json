@@ -1,0 +1,114 @@
+{
+  "status": {
+    "serviceIdentifier": "vehicle-status-service",
+    "messages": [
+      {
+        "responseCode": "CTP-GENERIC-20001",
+        "description": "Success",
+        "detailedDescription": "Request successfully completed"
+      }
+    ]
+  },
+  "payload": {
+    "vin": "SB1ZTEST0000000000",
+    "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+    "overallStatus": "ok",
+    "overallWarningCounts": 0,
+    "leftHandDrive": true,
+    "doors": {
+      "driver": {
+        "lockStatus": {
+          "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+          "status": "locked"
+        },
+        "openStatus": {
+          "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+          "status": "close"
+        }
+      },
+      "passenger": {
+        "lockStatus": {
+          "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+          "status": "locked"
+        },
+        "openStatus": {
+          "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+          "status": "close"
+        }
+      },
+      "rearLeft": {
+        "lockStatus": {
+          "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+          "status": "locked"
+        },
+        "openStatus": {
+          "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+          "status": "close"
+        }
+      },
+      "rearRight": {
+        "lockStatus": {
+          "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+          "status": "locked"
+        },
+        "openStatus": {
+          "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+          "status": "close"
+        }
+      },
+      "rearBack": {
+        "lockStatus": {
+          "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+          "status": "locked"
+        },
+        "openStatus": {
+          "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+          "status": "close"
+        }
+      },
+      "hood": {
+        "openStatus": {
+          "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+          "status": "close"
+        }
+      }
+    },
+    "windows": {
+      "driver": {
+        "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+        "status": "close"
+      },
+      "passenger": {
+        "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+        "status": "close"
+      },
+      "rearLeft": {
+        "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+        "status": "close"
+      },
+      "rearRight": {
+        "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+        "status": "close"
+      }
+    },
+    "lights": {
+      "hazard": {
+        "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+        "status": "off"
+      },
+      "tail": {
+        "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+        "status": "off"
+      },
+      "head": {
+        "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+        "status": "off"
+      }
+    },
+    "rearSeatReminder": {
+      "lastUpdateTimestamp": "2026-06-30T20:29:07.000Z",
+      "warning": false,
+      "reason": "notDetected"
+    }
+  }
+}
