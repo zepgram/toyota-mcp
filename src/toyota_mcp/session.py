@@ -10,7 +10,7 @@ from pathlib import Path
 import keyring
 from keyring.errors import KeyringError
 from pytoyoda.controller import Controller, TokenInfo
-from pytoyoda.exceptions import ToyotaLoginError
+from pytoyoda.exceptions import ToyotaInvalidUsernameError, ToyotaLoginError
 
 SERVICE = "toyota-mcp"
 ACCOUNT = "session"
@@ -182,6 +182,9 @@ async def sign_in(username: str, password: str, brand: str = "T") -> Session:
     try:
         await controller.login()
         refresh_token = controller._refresh_token
+    except ToyotaInvalidUsernameError as exc:
+        # pytoyoda raises this one outside the ToyotaLoginError hierarchy.
+        raise ToyotaLoginError(str(exc)) from exc
     finally:
         with contextlib.suppress(Exception):
             await controller.aclose()

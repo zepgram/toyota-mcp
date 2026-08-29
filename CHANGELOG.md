@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The package version is the git tag:
 tagging `vX.Y.Z` publishes `X.Y.Z` to PyPI and creates the GitHub release.
 
+## [0.3.2] — 2026-08-29
+
+### Fixed
+- An unknown MyToyota address made the sign-in page answer 500 instead of
+  saying so: pytoyoda raises that one outside its login-error hierarchy.
+
 ## [0.3.1] — 2026-08-29
 
 ### Fixed
