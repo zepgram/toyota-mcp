@@ -99,6 +99,37 @@ It validates credentials, lists your vehicles, and prints which tools your
 specific car supports. Exit codes: `0` ok · `2` config · `3` auth ·
 `4` no vehicle · `5` API error · `6` command rejected (`probe`).
 
+## Remote access — the "Connect" button
+
+By default the server runs on stdio, next to the MCP client. Point it at a URL
+instead and it becomes a remote MCP server with its own OAuth 2.1 authorization
+server, so a client connects the way it connects to Gmail or GitHub: paste the
+URL, press **Connect**, approve in the browser.
+
+```bash
+toyota-mcp login                                    # once: the vehicle session
+toyota-mcp --http https://toyota.example.com        # then serve it
+```
+
+It prints the URL to paste into your client and an **access code**:
+
+```
+Serving https://toyota.example.com/mcp — add that URL in your MCP client.
+Access code to approve a client: 8a4d-e7b8-b7b1
+```
+
+The client discovers the metadata, registers itself, and sends you to a consent
+page naming it; you type the access code once and it receives a token. There is
+no account and no user database — the access code is what proves you are the
+owner, and `--access-code` sets your own instead of a generated one.
+
+Run it on a machine of yours (a home server, a Raspberry Pi), behind a
+TLS-terminating proxy: the server refuses a non-`https://` public URL other
+than localhost, because bearer tokens must not travel in clear. Registered
+clients and issued tokens are kept in `~/.local/state/toyota-mcp/oauth.json`
+(mode 600) so a restart does not disconnect anyone; access tokens last an hour
+and refresh silently.
+
 ## Authentication
 
 Toyota has no third-party API programme: there is no developer portal, no

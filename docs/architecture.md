@@ -24,6 +24,8 @@ places.py      Named places (--places) → "home" / "work" labels.
 session.py     Browser sign-in and the saved session: the OAuth code exchange, the
                credential store, and a Controller that signs in from a refresh token.
 login.py       The `login` / `logout` commands driving that flow.
+oauth.py       The OAuth 2.1 authorization server for remote access: dynamic client
+               registration, owner consent by access code, tokens persisted to disk.
 prompts.py     MCP prompts (vehicle_briefing).
 server.py      MCPServer assembly, opt-ins, CLI entry (doctor / probe).
 doctor.py      Connectivity and capability diagnosis.  probe.py  Raw command probe.
@@ -56,6 +58,11 @@ Dependency direction is strictly downward: tools → gateway/models/opendata/pla
   refresh token, in the OS credential store; `SessionController` seeds pytoyoda
   with it, which makes pytoyoda refresh instead of asking for a password, and
   persists the rotated token. The password path remains for headless setups.
+- **Remote access**: with `--http URL` the server serves streamable HTTP and is
+  both the OAuth resource server and its own authorization server (Toyota
+  cannot be one). Clients register dynamically; the owner approves each with an
+  access code; grants live in `~/.local/state/toyota-mcp/oauth.json` (mode
+  600). Non-localhost URLs must be `https://` — the process refuses otherwise.
 - **Privacy**: pytoyoda's debug logging (full HTTP exchanges) and httpx INFO
   logging are silenced; coordinates, VINs and payloads are never logged;
   enrichment providers only receive coordinates when `--addresses` is set.
@@ -103,4 +110,5 @@ by hand in the release commit.
   payload (day, start/end times) cannot be verified without a plug-in vehicle;
   reading schedules and `CHARGE_NOW` are shipped untested and say so.
 - Several vehicles in one server instance: run one instance per `TOYOTA_VIN`.
-- Remote transport (streamable HTTP) needs authentication and TLS in front.
+- Hosting the server for other people: the access code identifies the owner,
+  not individual users, so one deployment serves one household.
