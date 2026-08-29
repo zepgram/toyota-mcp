@@ -20,6 +20,7 @@ from toyota_mcp.models import (
     CONFIRMATION_NOTE,
     ClimateReport,
     CommandReport,
+    Freshness,
     LockState,
     StatusReport,
     lock_state_of,
@@ -205,9 +206,16 @@ async def _climate_command(
     except CommandRejected as exc:
         return CommandReport(command=name, status="failed", detail=str(exc), climate=before_report)
     started = time.monotonic()
-    after, freshness, verified = await gateway.wait_for_climate(
-        _climate_changed(before, expected_on)
-    )
+    already = before.status.is_on is expected_on
+    after: ClimateBundle | None
+    freshness: Freshness | None
+    if already and before.status.updated_at is None:
+        # Toyota's climate status carries no timestamp: an unchanged state can never be re-verified.
+        after, freshness, verified = before, before_freshness, False
+    else:
+        after, freshness, verified = await gateway.wait_for_climate(
+            _climate_changed(before, expected_on)
+        )
     elapsed = round(time.monotonic() - started, 1)
     climate = (
         ClimateReport.from_climate(after.status, before.settings, freshness)
@@ -219,7 +227,7 @@ async def _climate_command(
         detail = f"The car reports remote climate {climate.status if climate else expected}."
     else:
         detail = UNVERIFIED_HINT.format(seconds=int(elapsed), read_tool="toyota_get_climate")
-        if before.status.is_on is expected_on:
+        if already:
             detail = f"Remote climate was already reported {expected} before the command. {detail}"
     return CommandReport(
         command=name,

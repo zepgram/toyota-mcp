@@ -237,11 +237,13 @@ async def test_stop_climate_preview_then_already_stopped(
     preview = await _call(command_server, "toyota_stop_climate")
     assert preview.structured_content["status"] == "needs_confirmation"
     assert fake_controller_class.commands == []
+    reads_before = fake_controller_class.calls.count(CLIMATE_STATUS_PATH)
     result = await _call(command_server, "toyota_stop_climate", {"confirm": True})
     content = result.structured_content
     assert content["status"] == "accepted"
     assert "already reported stopped" in content["detail"]
     assert fake_controller_class.commands == [(CLIMATE_CONTROL_PATH, {"command": "stop"})]
+    assert fake_controller_class.calls.count(CLIMATE_STATUS_PATH) == reads_before
 
 
 async def test_get_status(server: MCPServer) -> None:
