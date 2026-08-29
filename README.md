@@ -1,20 +1,30 @@
 <!-- mcp-name: io.github.zepgram/toyota -->
 
-# toyota-mcp
+# toyota-mcp — Toyota & Lexus MCP server for Claude and other AI assistants
 
-Ask your Toyota anything — [MCP](https://modelcontextprotocol.io) server for MyToyota Europe, read-only by default.
+**Ask your Toyota anything.** `toyota-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
+(MCP) server that connects a **MyToyota** or **MyLexus** Europe account to Claude,
+Claude Code, Cursor, VS Code or any MCP client — read your car's fuel level,
+range, location, trips and health, and send remote commands (lock, climate,
+charging) in plain language.
 
 [![PyPI](https://img.shields.io/pypi/v/toyota-mcp)](https://pypi.org/project/toyota-mcp/)
 [![CI](https://github.com/zepgram/toyota-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/zepgram/toyota-mcp/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/pypi/pyversions/toyota-mcp)](https://pypi.org/project/toyota-mcp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Connect your MyToyota Europe account to Claude (or any MCP client) and ask in
-plain language: *"how much range is left?"*, *"where is the car?"*, *"what did
-the last trip consume?"*, *"what's my EV share this month?"*.
+> *"How much range is left?"* · *"Where is the car?"* · *"Is it locked?"* ·
+> *"What did the last trip consume?"* · *"What's my EV share this month?"* ·
+> *"Pre-heat the car for 8 am."* · *"Cheapest petrol near the car?"*
 
-Built on [pytoyoda](https://github.com/pytoyoda/pytoyoda), the community-maintained
-client for Toyota's European Connected Services.
+| | |
+|---|---|
+| **Vehicles** | Toyota and Lexus, **Europe only** (Toyota Connected Services / `ctpa-oneapi`) |
+| **Powertrains** | petrol, diesel, full hybrid, plug-in hybrid, electric |
+| **Tools** | 13 read + 11 remote commands + 1 prompt ([full list](#available-tools)) |
+| **Install** | `uvx toyota-mcp` — no clone, no build |
+| **Requires** | a MyToyota/MyLexus account **without MFA**, Python 3.11+ |
+| **Built on** | [pytoyoda](https://github.com/pytoyoda/pytoyoda), the community client for Toyota Europe |
 
 ## Requirements
 
@@ -51,6 +61,10 @@ Add to `claude_desktop_config.json` (macOS:
 }
 ```
 
+Add options after `toyota-mcp` in `args` — for example
+`["toyota-mcp", "--addresses", "osm"]` for postal addresses, or
+`["toyota-mcp", "--read-only"]` to leave every remote command out.
+
 ### Claude Code
 
 ```bash
@@ -59,6 +73,12 @@ claude mcp add --transport stdio toyota \
   --env TOYOTA_PASSWORD=your-password \
   -- uvx toyota-mcp
 ```
+
+### Cursor, VS Code and other MCP clients
+
+Any client that speaks stdio works with the same shape — command `uvx`,
+arguments `["toyota-mcp"]`, credentials in the environment. In VS Code, add it
+to `.vscode/mcp.json`; in Cursor, to `~/.cursor/mcp.json`.
 
 ### First contact: the doctor
 
@@ -70,7 +90,7 @@ TOYOTA_USERNAME=you@example.com TOYOTA_PASSWORD=... uvx toyota-mcp doctor
 
 It validates credentials, lists your vehicles, and prints which tools your
 specific car supports. Exit codes: `0` ok · `2` config · `3` auth ·
-`4` no vehicle · `5` API error.
+`4` no vehicle · `5` API error · `6` command rejected (`probe`).
 
 ## Configuration
 
@@ -101,6 +121,8 @@ options, so they are visible in `toyota-mcp --help` and in your host's `args`:
 
 A local `.env` file works too (see `.env.example`). Credentials never touch disk
 otherwise; tokens live in memory only.
+
+<a id="available-tools"></a>
 
 ## Available tools
 
@@ -179,6 +201,47 @@ trip start/end points — no account, no key:
 Enabling it sends the car's coordinates to that service; nothing is sent
 anywhere otherwise. Address lookups fail open (the answer simply has no
 address).
+
+## For AI agents
+
+If you are an AI assistant reading this to decide whether and how to use this
+server, here is what you need:
+
+**What it is.** A stdio MCP server exposing one MyToyota/MyLexus Europe vehicle.
+Every tool answers with `structuredContent` matching its output schema.
+
+**Choosing a tool.** `toyota_get_energy` for fuel and range on any powertrain;
+`toyota_get_charging` only for plug-in hybrids and EVs (it errors with an
+explicit "not applicable" otherwise). `toyota_get_status` for doors, windows,
+locks, lights; `toyota_get_health` for warning lights, oil indicators,
+notifications and service history. `toyota_get_trips` lists individual drives,
+`toyota_get_trip_summary` aggregates a window or a calendar period — prefer the
+summary for averages, and pass `period` to match the figures shown in the
+MyToyota app.
+
+**Data is never live by default.** The car uploads telemetry at ignition-off and
+its position when it parks, so every response carries a `freshness` block:
+`fetched_at`, `age_seconds`, `source` (`live` / `cache` / `stale_cache`) and
+`vehicle_reported_at` when Toyota provides the car-side timestamp. When the user
+asks about *current* state, cite that age rather than implying real time. If they
+need the state as of now, `toyota_wake_vehicle` asks the car to report (it costs
+a little 12 V battery, so do not call it routinely).
+
+**Commands.** Every command tool takes `confirm`. Call it with `confirm=false`
+first to preview: nothing is sent, and the report shows the current state. Send
+`confirm=true` only after the user explicitly agreed, and never on your own
+initiative — `toyota_unlock_doors`, `toyota_unlock_trunk` and
+`toyota_start_climate` carry `destructiveHint` (the last one runs the engine on
+a hybrid, which is dangerous indoors). The result tells you exactly what
+happened: `verified` (the car reported the new state), `accepted` (Toyota took
+the command but the car has not confirmed within the timeout — say so, do not
+claim success), or `failed` with Toyota's reason. Do not resend on `accepted`;
+commands are rate-limited to one per 10 seconds.
+
+**Limits worth stating to the user.** Europe only. Self-charging full hybrids
+expose no traction-battery level — the tools say so explicitly instead of
+guessing. Toyota keeps roughly 12 months of trip history. Not every car accepts
+every command; Toyota answers "vehicle not supported" and nothing reaches the car.
 
 ## How fresh is the data?
 
@@ -296,6 +359,22 @@ npx @modelcontextprotocol/inspector uvx toyota-mcp
 Note for contributors (and their coding agents): this project uses MCP Python
 SDK **v2** — `MCPServer`, `mcp.server.mcpserver.Context`, `ToolError`. Most
 tutorials still show v1's `FastMCP` imports, which no longer exist.
+
+## Related projects
+
+- [pytoyoda](https://github.com/pytoyoda/pytoyoda) — the Python client this
+  server is built on; report API breakage there.
+- [ha_toyota](https://github.com/pytoyoda/ha_toyota) — Home Assistant
+  integration on the same library.
+- [tyta](https://github.com/Stopa/tyta) — CLI and MCP server for the same API,
+  with its own HTTP client.
+
+## Keywords
+
+Toyota MCP server, Lexus MCP server, MyToyota MCP, Toyota Connected Services
+API, Toyota Claude integration, connected car MCP, vehicle telemetry MCP, remote
+lock unlock MCP, EV charging MCP, Model Context Protocol car, Toyota Corolla
+RAV4 Yaris C-HR bZ4X, Claude Desktop car integration, pytoyoda MCP.
 
 ## License
 

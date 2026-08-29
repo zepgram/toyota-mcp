@@ -1,7 +1,7 @@
 [project]
 name = "toyota-mcp"
 dynamic = ["version"]
-description = "MCP server for MyToyota Europe — ask your Toyota anything (read-only by default)"
+description = "Toyota and Lexus MCP server — connect a MyToyota Europe account to Claude and other AI assistants"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -16,7 +16,20 @@ dependencies = [
     "loguru>=0.7,<1",
     "httpx>=0.28,<1",
 ]
-keywords = ["mcp", "model-context-protocol", "toyota", "mytoyota", "connected-services"]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "ai-agent",
+    "toyota",
+    "lexus",
+    "mytoyota",
+    "connected-car",
+    "connected-services",
+    "telematics",
+    "vehicle",
+    "electric-vehicle",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
@@ -26,11 +39,17 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Home Automation",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Environment :: Console",
+    "Operating System :: OS Independent",
     "Typing :: Typed",
 ]
 
 [project.urls]
+Homepage = "https://github.com/zepgram/toyota-mcp"
 Repository = "https://github.com/zepgram/toyota-mcp"
+Documentation = "https://github.com/zepgram/toyota-mcp#readme"
+Changelog = "https://github.com/zepgram/toyota-mcp/blob/main/CHANGELOG.md"
 Issues = "https://github.com/zepgram/toyota-mcp/issues"
 
 [project.scripts]
