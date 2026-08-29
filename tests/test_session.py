@@ -9,7 +9,7 @@ import jwt
 import pytest
 from keyring.errors import NoKeyringError
 from pytoyoda.controller import TokenInfo
-from pytoyoda.exceptions import ToyotaLoginError
+from pytoyoda.exceptions import ToyotaInvalidUsernameError, ToyotaLoginError
 
 from toyota_mcp import login
 from toyota_mcp.session import EXPIRED, Session, SessionController, SessionStore, sign_in
@@ -156,6 +156,24 @@ async def test_sign_in_never_reuses_a_cached_token(monkeypatch: pytest.MonkeyPat
     with pytest.raises(ToyotaLoginError, match="denied"):
         await sign_in("driver@example.com", "wrong-password")
     assert attempted == ["wrong-password"]
+
+
+async def test_sign_in_normalises_an_unknown_username(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pytoyoda raises this one outside the login-error hierarchy; callers must still see it."""
+
+    class UnknownUser:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self._token_info = None
+
+        async def login(self) -> None:
+            raise ToyotaInvalidUsernameError("User Not Found.")
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr("toyota_mcp.session.Controller", UnknownUser)
+    with pytest.raises(ToyotaLoginError, match="User Not Found"):
+        await sign_in("nobody@example.com", "whatever")
 
 
 async def test_sign_in_reports_a_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
