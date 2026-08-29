@@ -20,6 +20,10 @@ tagging `vX.Y.Z` publishes `X.Y.Z` to PyPI and creates the GitHub release.
   car-reported outcome.
 - `--addresses osm|fr` (worldwide or French addresses, French fuel prices),
   `--places` named places, the `vehicle_briefing` prompt.
+- Remote access: `--http URL` serves streamable HTTP behind an OAuth 2.1
+  authorization server (dynamic client registration, PKCE, owner consent by
+  access code, grants persisted), so MCP clients connect with their usual
+  "Connect" button instead of a local process.
 - `toyota-mcp login` / `logout`: sign in through the browser on Toyota's own
   page and keep only a refresh token in the operating system's credential
   store, so the account password is never held by this program nor written to

@@ -72,6 +72,7 @@ dev = [
     "pytest-asyncio>=1.4",
     "mypy>=2.3",
     "ruff>=0.16",
+    "asgi-lifespan>=2,<3",
 ]
 
 [tool.ruff]
