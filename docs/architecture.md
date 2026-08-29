@@ -21,6 +21,9 @@ tools/         One module per topic; each tool is a thin async function that cal
 opendata.py    Optional enrichment providers (addresses, fuel prices) behind
                --addresses; fail-open.
 places.py      Named places (--places) → "home" / "work" labels.
+session.py     Browser sign-in and the saved session: the OAuth code exchange, the
+               credential store, and a Controller that signs in from a refresh token.
+login.py       The `login` / `logout` commands driving that flow.
 prompts.py     MCP prompts (vehicle_briefing).
 server.py      MCPServer assembly, opt-ins, CLI entry (doctor / probe).
 doctor.py      Connectivity and capability diagnosis.  probe.py  Raw command probe.
@@ -47,6 +50,12 @@ Dependency direction is strictly downward: tools → gateway/models/opendata/pla
 - **Errors**: `errors.translate` is the single mapping from pytoyoda/httpx
   exceptions to actionable messages, including Toyota's remote codes
   (40006 unknown command, 40041 vehicle not supported).
+- **Authentication**: Toyota exposes no third-party OAuth client, so the only
+  credentials are the account's own. `toyota-mcp login` performs the mobile
+  client's authorization-code flow in the user's browser and keeps only the
+  refresh token, in the OS credential store; `SessionController` seeds pytoyoda
+  with it, which makes pytoyoda refresh instead of asking for a password, and
+  persists the rotated token. The password path remains for headless setups.
 - **Privacy**: pytoyoda's debug logging (full HTTP exchanges) and httpx INFO
   logging are silenced; coordinates, VINs and payloads are never logged;
   enrichment providers only receive coordinates when `--addresses` is set.

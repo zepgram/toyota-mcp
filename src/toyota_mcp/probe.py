@@ -12,6 +12,12 @@ from pytoyoda.exceptions import ToyotaApiError, ToyotaLoginError
 
 from toyota_mcp.config import Settings
 from toyota_mcp.doctor import EXIT_API, EXIT_AUTH, EXIT_CONFIG, EXIT_NO_VEHICLE, EXIT_OK
+from toyota_mcp.session import (
+    NO_CREDENTIALS,
+    SessionController,
+    SessionStore,
+    account_username,
+)
 
 EXIT_REJECTED = 6
 
@@ -35,7 +41,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
 def run(
     arguments: list[str],
-    controller_class: type[Controller] = Controller,
+    controller_class: type[Controller] | None = None,
     poll_interval: float = POLL_INTERVAL,
 ) -> int:
     parser = add_arguments(
@@ -52,15 +58,19 @@ def run(
 
 def execute(
     args: argparse.Namespace,
-    controller_class: type[Controller] = Controller,
+    controller_class: type[Controller] | None = None,
     poll_interval: float = POLL_INTERVAL,
 ) -> int:
+    controller_class = controller_class or SessionController
     try:
         settings = Settings()
     except ValidationError as exc:
         for error in exc.errors():
             variable = "TOYOTA_" + "_".join(str(part) for part in error["loc"]).upper()
             print(f"CONFIG  {variable}: {error['msg']}")
+        return EXIT_CONFIG
+    if settings.password is None and SessionStore().load() is None:
+        print(f"CONFIG  {NO_CREDENTIALS}")
         return EXIT_CONFIG
     return asyncio.run(
         _probe(
@@ -86,7 +96,9 @@ async def _probe(
     poll_interval: float,
 ) -> int:
     controller = controller_class(
-        settings.username, settings.password.get_secret_value(), brand=settings.brand
+        account_username(settings.username),
+        settings.password.get_secret_value() if settings.password else "",
+        brand=settings.brand,
     )
     try:
         try:

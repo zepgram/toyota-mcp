@@ -54,6 +54,7 @@ from toyota_mcp.models import (
 )
 from toyota_mcp.opendata import OpenData
 from toyota_mcp.places import Places
+from toyota_mcp.session import SessionController, account_username
 
 T = TypeVar("T")
 
@@ -153,18 +154,19 @@ class VehicleGateway:
     def __init__(
         self,
         settings: Settings,
-        controller_class: type[Controller] = Controller,
+        controller_class: type[Controller] | None = None,
         command_poll_interval: float = 5.0,
         command_timeout: float = 40.0,
     ) -> None:
+        controller_class = controller_class or SessionController
         self._settings = settings
         self._command_poll_interval = command_poll_interval
         self._command_timeout = command_timeout
         self._last_command_at = 0.0
         capturing_class, self._raw, holder = _capturing(controller_class)
         self._client = MyT(
-            username=settings.username,
-            password=settings.password.get_secret_value(),
+            username=account_username(settings.username),
+            password=settings.password.get_secret_value() if settings.password else "",
             use_metric=settings.use_metric,
             brand=settings.brand,
             controller_class=capturing_class,

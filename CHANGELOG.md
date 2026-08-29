@@ -20,5 +20,9 @@ tagging `vX.Y.Z` publishes `X.Y.Z` to PyPI and creates the GitHub release.
   car-reported outcome.
 - `--addresses osm|fr` (worldwide or French addresses, French fuel prices),
   `--places` named places, the `vehicle_briefing` prompt.
+- `toyota-mcp login` / `logout`: sign in through the browser on Toyota's own
+  page and keep only a refresh token in the operating system's credential
+  store, so the account password is never held by this program nor written to
+  an MCP host's configuration file.
 - `toyota-mcp doctor` (credentials, vehicles, tool availability) and
   `toyota-mcp probe` (raw command strings against the backend).
