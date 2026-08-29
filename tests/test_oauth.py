@@ -143,7 +143,9 @@ async def test_the_owner_approves_a_client_and_it_can_then_call_tools(
     assert page.status_code == 200
     assert "Claude" in page.text
     assert 'name="username"' in page.text and 'type="password"' in page.text
-    assert "go straight to Toyota" in page.text
+    assert "Nothing you type here is kept" in page.text
+    assert "exclusive property of Toyota Motor Corporation" in page.text
+    assert "not affiliated with, endorsed by" in page.text
 
     refused = await http.post(
         consent_url, data={"username": "driver@example.com", "password": "wrong"}

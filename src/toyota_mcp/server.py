@@ -21,6 +21,8 @@ from toyota_mcp.gateway import AppContext, VehicleGateway
 from toyota_mcp.oauth import (
     CONSENT_PATH,
     ERROR,
+    LEGAL,
+    MARK,
     PAGE,
     SCOPE,
     SIGN_IN_BODY,
@@ -181,7 +183,15 @@ def _choices(vehicles: list[Any]) -> str:
 
 def _page(title: str, intro: str, body: str, status: int = 200, error: str = "") -> Response:
     return HTMLResponse(
-        PAGE.format(title=escape(title), intro=intro, body=body, error=error), status_code=status
+        PAGE.format(
+            title=escape(title),
+            intro=intro,
+            body=body,
+            error=error,
+            mark=MARK,
+            legal=LEGAL if body else "",
+        ),
+        status_code=status,
     )
 
 
