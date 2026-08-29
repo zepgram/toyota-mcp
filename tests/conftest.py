@@ -5,11 +5,13 @@ import json
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
 import pytest
 from pytoyoda.controller import Controller
 
 from toyota_mcp.config import Settings
 from toyota_mcp.gateway import VehicleGateway
+from toyota_mcp.opendata import FrenchOpenData
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -22,9 +24,50 @@ ROUTES = {
     "/v2/notification/history": "notifications.json",
     "/v1/servicehistory/vehicle/summary": "service_history.json",
     "/v1/trips": "trips.json",
+    "/v1/vehicle/climate-settings": "climate_settings.json",
+    "/v1/vehicle/climate-status": "climate_status.json",
 }
 
 LOLA_VIN = "JTDZARBE0RJ000042"
+BAN_LABEL = "12 Rue de l'Exemple 31000 Toulouse"
+FUEL_RECORDS = [
+    {
+        "adresse": "Route de l'Exemple",
+        "cp": "31700",
+        "ville": "Blagnac",
+        "e10_prix": 1.985,
+        "e10_maj": "2026-08-29T08:29:00+00:00",
+        "gazole_prix": 2.159,
+        "horaires_automate_24_24": "Non",
+        "carburants_disponibles": ["Gazole", "E10", "SP98"],
+        "geom": {"lat": 52.17, "lon": 0.14},
+    },
+    {
+        "adresse": "Avenue de l'Exemple",
+        "cp": "31000",
+        "ville": "Toulouse",
+        "e10_prix": 2.01,
+        "e10_maj": "2026-08-29T06:00:00+00:00",
+        "gazole_prix": None,
+        "horaires_automate_24_24": "Oui",
+        "carburants_disponibles": ["E10"],
+        "geom": {"lat": 52.20, "lon": 0.10},
+    },
+]
+
+
+class OpenDataStub:
+    def __init__(self) -> None:
+        self.requests: list[httpx.Request] = []
+        self.status_code = 200
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if self.status_code != 200:
+            return httpx.Response(self.status_code, json={"message": "boom"})
+        if request.url.host == "api-adresse.data.gouv.fr":
+            return httpx.Response(200, json={"features": [{"properties": {"label": BAN_LABEL}}]})
+        return httpx.Response(200, json={"results": FUEL_RECORDS})
 
 
 def load_responses() -> dict[str, Any]:
@@ -41,10 +84,13 @@ class FakeControllerBase(Controller):
     login_count: ClassVar[int]
 
     async def login(self) -> None:
-        cls = type(self)
+        cls = self._state()
         cls.login_count += 1
         if cls.login_failure is not None:
             raise cls.login_failure
+
+    def _state(self) -> type[FakeControllerBase]:
+        return next(klass for klass in type(self).__mro__ if "login_count" in vars(klass))
 
     async def request_json(
         self,
@@ -55,7 +101,7 @@ class FakeControllerBase(Controller):
         params: dict[str, Any] | None = None,
         headers: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        cls = type(self)
+        cls = self._state()
         path = endpoint.split("?")[0]
         cls.calls.append(path)
         if cls.failure is not None:
@@ -92,3 +138,13 @@ def settings() -> Settings:
 @pytest.fixture
 def gateway(settings: Settings, fake_controller_class: type[FakeControllerBase]) -> VehicleGateway:
     return VehicleGateway(settings, controller_class=fake_controller_class)
+
+
+@pytest.fixture
+def opendata_stub() -> OpenDataStub:
+    return OpenDataStub()
+
+
+@pytest.fixture
+def opendata(opendata_stub: OpenDataStub) -> FrenchOpenData:
+    return FrenchOpenData(transport=httpx.MockTransport(opendata_stub.handler))

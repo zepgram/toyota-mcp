@@ -1,0 +1,15 @@
+{
+  "status": {
+    "serviceIdentifier": "vehicle-status-service",
+    "messages": [
+      {
+        "responseCode": "CTP-GENERIC-20001",
+        "description": "Success",
+        "detailedDescription": "Request successfully completed"
+      }
+    ]
+  },
+  "payload": {
+    "status": "stopped"
+  }
+}

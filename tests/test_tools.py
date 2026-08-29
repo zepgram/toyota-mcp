@@ -7,13 +7,17 @@ from mcp.client import Client
 from mcp.server import MCPServer
 from pytoyoda.exceptions import ToyotaApiError
 
-from tests.conftest import FakeControllerBase
+from tests.conftest import BAN_LABEL, FakeControllerBase
 from toyota_mcp import errors
 from toyota_mcp.gateway import VehicleGateway
 from toyota_mcp.models import FULL_HYBRID_BATTERY_NOTE
+from toyota_mcp.opendata import FrenchOpenData
 from toyota_mcp.server import create_server
 
 EXPECTED_TOOLS = {
+    "toyota_get_vehicle_info",
+    "toyota_get_climate",
+    "toyota_find_fuel_stations",
     "toyota_get_status",
     "toyota_get_energy",
     "toyota_get_odometer",
@@ -27,7 +31,12 @@ EXPECTED_TOOLS = {
 
 
 @pytest.fixture
-def server(gateway: VehicleGateway) -> MCPServer:
+def server(gateway: VehicleGateway, opendata: FrenchOpenData) -> MCPServer:
+    return create_server(gateway, opendata)
+
+
+@pytest.fixture
+def offline_server(gateway: VehicleGateway) -> MCPServer:
     return create_server(gateway)
 
 
@@ -58,8 +67,76 @@ async def test_get_status(server: MCPServer) -> None:
     assert content["doors"]["driver"]["state"] == "closed"
     assert content["windows"]["driver"] == "closed"
     assert content["hood"] == "closed"
+    assert content["lights"] == {
+        "hazard": {"state": "off", "reported_at": "2026-06-30T20:29:07Z"},
+        "tail": {"state": "off", "reported_at": "2026-06-30T20:29:07Z"},
+        "head": {"state": "off", "reported_at": "2026-06-30T20:29:07Z"},
+    }
+    assert content["rear_seat_reminder"]["warning"] is False
+    assert content["rear_seat_reminder"]["reason"] == "notDetected"
+    assert content["overall_status"] == "ok"
+    assert content["warning_count"] == 0
     assert content["freshness"]["source"] == "live"
     assert content["freshness"]["vehicle_reported_at"] is not None
+
+
+async def test_get_status_without_extras_still_answers(
+    server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    payload = fake_controller_class.responses["/v1/vehicle/status"]["payload"]
+    for key in ("lights", "rearSeatReminder", "overallStatus", "overallWarningCounts"):
+        payload.pop(key)
+    result = await _call(server, "toyota_get_status")
+    assert not result.is_error
+    content = result.structured_content
+    assert content["all_locked"] == "locked"
+    assert content["lights"] is None
+    assert content["rear_seat_reminder"] is None
+    assert content["overall_status"] is None
+
+
+async def test_get_vehicle_info(server: MCPServer) -> None:
+    result = await _call(server, "toyota_get_vehicle_info")
+    assert not result.is_error
+    content = result.structured_content
+    assert content["alias"] == "Lola"
+    assert content["vin_suffix"] == "0042"
+    assert content["model"] == "Corolla"
+    assert content["model_year"] == "2020"
+    assert content["colour"] == "Dark Blue Metallic"
+    assert content["powertrain"] == "full_hybrid"
+    assert content["date_of_first_use"] == "2022-11-30"
+    assert content["connected_services_status"] == "SUBSCRIBED"
+    assert content["subscriptions"][0]["product"] == "REMOTE SERVICES"
+    capabilities = content["remote_capabilities"]
+    assert capabilities["last_parked_position"] is True
+    assert capabilities["telemetry"] is True
+    assert capabilities["lock_unlock"] is False
+    assert "unreliable" in capabilities["note"]
+
+
+async def test_get_climate(server: MCPServer) -> None:
+    result = await _call(server, "toyota_get_climate")
+    assert not result.is_error
+    content = result.structured_content
+    assert content["status"] == "stopped"
+    assert content["is_on"] is False
+    assert content["preset"]["temperature"] == {"value": 22.0, "unit": "C"}
+    assert content["preset"]["duration_minutes"] == 20.0
+    assert content["preset"]["options"]["front_defroster"] is False
+    assert content["preset"]["options"]["driver_seat"] == "off"
+    assert "cannot" in content["note"] or "not available" in content["note"]
+
+
+async def test_get_climate_not_supported(
+    server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    fake_controller_class.responses["/v2/vehicle/guid"]["payload"][0]["features"][
+        "climateStartEngine"
+    ] = 0
+    result = await _call(server, "toyota_get_climate")
+    assert result.is_error
+    assert "not be supported" in result.content[0].text
 
 
 async def test_get_energy_full_hybrid(server: MCPServer) -> None:
@@ -88,7 +165,36 @@ async def test_get_location(server: MCPServer) -> None:
     assert content["latitude"] == 52.169516
     assert content["longitude"] == 0.135654
     assert content["google_maps_url"] == "https://www.google.com/maps?q=52.169516,0.135654"
+    assert content["address"] == BAN_LABEL
     assert "parks" in content["freshness"]["note"]
+
+
+async def test_get_location_without_open_data(offline_server: MCPServer) -> None:
+    result = await _call(offline_server, "toyota_get_location")
+    assert not result.is_error
+    assert result.structured_content["address"] is None
+
+
+async def test_find_fuel_stations(server: MCPServer) -> None:
+    result = await _call(server, "toyota_find_fuel_stations", {"fuel": "e10", "radius_km": 10})
+    assert not result.is_error
+    content = result.structured_content
+    assert content["fuel"] == "e10"
+    assert content["around"]["address"] == BAN_LABEL
+    assert len(content["stations"]) == 2
+    first = content["stations"][0]
+    assert first["price_eur_per_litre"] == 1.985
+    assert first["city"] == "Blagnac"
+    assert 0 < first["distance_km"] < 1
+    assert first["open_24h"] is False
+    assert content["stations"][1]["open_24h"] is True
+    assert "stations" in content["note"]
+
+
+async def test_find_fuel_stations_disabled(offline_server: MCPServer) -> None:
+    result = await _call(offline_server, "toyota_find_fuel_stations")
+    assert result.is_error
+    assert "TOYOTA_OPEN_DATA" in result.content[0].text
 
 
 async def test_get_location_never_reported(
@@ -107,6 +213,8 @@ async def test_get_last_trip(server: MCPServer) -> None:
     assert content["trip"]["distance"]["unit"] == "km"
     assert content["trip"]["fuel_consumed"]["unit"] == "L"
     assert content["trip"]["ev_ratio_percent"] is not None
+    assert content["trip"]["end"]["address"] == BAN_LABEL
+    assert content["trip"]["hybrid_breakdown"]["ev"]["distance"]["unit"] == "km"
     assert content["freshness"]["source"] == "live"
 
 
@@ -120,6 +228,8 @@ async def test_get_trips(server: MCPServer) -> None:
     assert len(content["trips"]) == 2
     first, second = content["trips"]
     assert first["started_at"] >= second["started_at"]
+    assert first["end"]["address"] == BAN_LABEL
+    assert first["hybrid_breakdown"]["ev"]["duration_minutes"] is not None
     assert "12 months" in content["retention_note"]
 
 

@@ -13,6 +13,7 @@ from toyota_mcp.models import (
     Freshness,
     NotificationItem,
     Quantity,
+    StatusExtras,
     TripReport,
     TripsReport,
     TripSummaryReport,
@@ -111,6 +112,7 @@ def _trip(**overrides: Any) -> Any:
         "score_acceleration": 75.0,
         "score_braking": 88.0,
         "score_constant_speed": 61.0,
+        "locations": None,
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -178,6 +180,36 @@ def test_trips_report_empty_window_is_typed_not_error() -> None:
     assert report.trips == []
     assert report.note is not None
     assert "No trips recorded" in report.note
+
+
+def test_status_extras_tolerate_garbage() -> None:
+    assert StatusExtras.from_payload(None) == StatusExtras()
+    assert StatusExtras.from_payload({"lights": "nope"}) == StatusExtras()
+    extras = StatusExtras.from_payload(
+        {"overallStatus": "ok", "lights": {"head": {"status": "on"}}}
+    )
+    assert extras.overall_status == "ok"
+    assert extras.lights is not None and extras.lights.head is not None
+    assert extras.lights.head.status == "on"
+
+
+def test_trip_hybrid_breakdown_from_raw_metres_and_seconds() -> None:
+    hdc = SimpleNamespace(
+        ev_distance=1311,
+        ev_time=308,
+        charge_dist=934,
+        charge_time=208,
+        eco_dist=999,
+        eco_time=165,
+        power_dist=239,
+        power_time=20,
+    )
+    report = TripReport.from_trip(_trip(_trip=SimpleNamespace(hdc=hdc), locations=None), True)
+    assert report.hybrid_breakdown is not None
+    assert report.hybrid_breakdown.ev.distance == Quantity(value=1.31, unit="km")
+    assert report.hybrid_breakdown.ev.duration_minutes == 5.1
+    assert report.hybrid_breakdown.power.distance == Quantity(value=0.24, unit="km")
+    assert report.start is None
 
 
 def test_notification_strips_vin_toyota_prepends_to_messages() -> None:

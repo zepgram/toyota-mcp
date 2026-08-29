@@ -210,7 +210,7 @@
     "autoDrive": 0,
     "cerence": 0,
     "chargingStation": 1,
-    "climateStartEngine": 0,
+    "climateStartEngine": 1,
     "collisionAssistance": 0,
     "connectedCard": 0,
     "connectedInsurance": 0,

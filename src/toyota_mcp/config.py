@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     vin: str | None = None
     brand: Literal["T", "L"] = "T"
     use_metric: bool = True
+    open_data: Literal["off", "fr"] = "off"
 
     @field_validator("username")
     @classmethod

@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from toyota_mcp import __version__
 from toyota_mcp.config import Settings
 from toyota_mcp.gateway import AppContext, VehicleGateway
+from toyota_mcp.opendata import FrenchOpenData
 from toyota_mcp.tools import register_all
 
 INSTRUCTIONS = (
@@ -27,13 +28,15 @@ USAGE = (
 )
 
 
-def create_server(gateway: VehicleGateway) -> MCPServer:
+def create_server(gateway: VehicleGateway, opendata: FrenchOpenData | None = None) -> MCPServer:
     @asynccontextmanager
     async def lifespan(server: MCPServer) -> AsyncIterator[AppContext]:
         try:
-            yield AppContext(gateway=gateway)
+            yield AppContext(gateway=gateway, opendata=opendata)
         finally:
             await gateway.aclose()
+            if opendata is not None:
+                await opendata.aclose()
 
     mcp = MCPServer(
         "toyota",
@@ -83,7 +86,9 @@ def main() -> None:
     if arguments:
         print(USAGE, file=sys.stderr)
         raise SystemExit(2)
-    create_server(VehicleGateway(load_settings())).run()
+    settings = load_settings()
+    opendata = FrenchOpenData() if settings.open_data == "fr" else None
+    create_server(VehicleGateway(settings), opendata).run()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,30 @@
+{
+  "status": {
+    "serviceIdentifier": "vehicle-status-service",
+    "messages": [
+      {
+        "responseCode": "CTP-GENERIC-20001",
+        "description": "Success",
+        "detailedDescription": "Request successfully completed"
+      }
+    ]
+  },
+  "payload": {
+    "duration": 20,
+    "temperature": {
+      "value": 22.0,
+      "unit": "C"
+    },
+    "heatingOptions": {
+      "frontDefroster": "off",
+      "rearDefogger": "off",
+      "steeringHeater": "off"
+    },
+    "seatOptions": {
+      "driverSeat": "off",
+      "passengerSeat": "off",
+      "rearDriverSeat": "off",
+      "rearPassengerSeat": "off"
+    }
+  }
+}

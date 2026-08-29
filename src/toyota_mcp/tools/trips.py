@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, timedelta
 from typing import Annotated
 
@@ -8,23 +9,25 @@ from pydantic import Field
 
 from toyota_mcp.gateway import AppContext
 from toyota_mcp.models import LastTripReport, TripReport, TripsReport, TripSummaryReport
+from toyota_mcp.opendata import FrenchOpenData
 from toyota_mcp.tools.base import READ_ONLY
 
 
 def register(mcp: MCPServer) -> None:
     @mcp.tool(title="Last trip details", annotations=READ_ONLY)
     async def toyota_get_last_trip(ctx: Context[AppContext]) -> LastTripReport:
-        """Details of the most recent trip: distance, duration, consumption, EV share.
+        """Most recent trip: distance, duration, consumption, hybrid mode split, places.
 
         Use for: how was the last trip? what did the last drive consume?
+        Start/end addresses need TOYOTA_OPEN_DATA=fr (France).
         """
-        gateway = ctx.request_context.lifespan_context.gateway
-        trip, freshness = await gateway.last_trip()
+        context = ctx.request_context.lifespan_context
+        trip, freshness = await context.gateway.last_trip()
         if trip is None:
             raise ToolError("No trip has been recorded for this vehicle yet.")
-        return LastTripReport(
-            trip=TripReport.from_trip(trip, gateway.use_metric), freshness=freshness
-        )
+        report = TripReport.from_trip(trip, context.gateway.use_metric)
+        await _add_addresses([report], context.opendata)
+        return LastTripReport(trip=report, freshness=freshness)
 
     @mcp.tool(title="Recent trips", annotations=READ_ONLY)
     async def toyota_get_trips(
@@ -43,12 +46,14 @@ def register(mcp: MCPServer) -> None:
         For averages over a period, prefer toyota_get_trip_summary.
         For windows beyond 92 days, use toyota_get_trip_summary.
         """
-        gateway = ctx.request_context.lifespan_context.gateway
+        context = ctx.request_context.lifespan_context
         window_from, window_to = _window(days)
-        trips, freshness = await gateway.trips(window_from, window_to)
-        return TripsReport.from_trips(
-            trips, window_from, window_to, limit, gateway.use_metric, freshness
+        trips, freshness = await context.gateway.trips(window_from, window_to)
+        report = TripsReport.from_trips(
+            trips, window_from, window_to, limit, context.gateway.use_metric, freshness
         )
+        await _add_addresses(report.trips, context.opendata)
+        return report
 
     @mcp.tool(title="Driving statistics over a period", annotations=READ_ONLY)
     async def toyota_get_trip_summary(
@@ -70,6 +75,22 @@ def register(mcp: MCPServer) -> None:
         return TripSummaryReport.from_daily_summaries(
             summaries, window_from, window_to, gateway.use_metric, freshness
         )
+
+
+async def _add_addresses(reports: list[TripReport], opendata: FrenchOpenData | None) -> None:
+    if opendata is None:
+        return
+    targets = [
+        (place, place.latitude, place.longitude)
+        for report in reports
+        for place in (report.start, report.end)
+        if place is not None and place.latitude is not None and place.longitude is not None
+    ]
+    addresses = await asyncio.gather(
+        *(opendata.reverse_geocode(latitude, longitude) for _, latitude, longitude in targets)
+    )
+    for (place, _, _), address in zip(targets, addresses, strict=True):
+        place.address = address
 
 
 def _window(days: int) -> tuple[date, date]:

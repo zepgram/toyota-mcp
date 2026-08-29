@@ -31,7 +31,7 @@ def _expire(gateway: VehicleGateway, key: str, seconds: float) -> None:
 async def test_single_flight_collapses_concurrent_calls(
     gateway: VehicleGateway, fake_controller_class: type[FakeControllerBase]
 ) -> None:
-    results = await asyncio.gather(*(gateway.lock_status() for _ in range(10)))
+    results = await asyncio.gather(*(gateway.status() for _ in range(10)))
     assert fake_controller_class.calls.count(STATUS_PATH) == 1
     live_count = sum(1 for _, freshness in results if freshness.source == "live")
     assert live_count == 1
@@ -41,15 +41,15 @@ async def test_single_flight_collapses_concurrent_calls(
 async def test_snapshot_isolated_per_endpoint(
     gateway: VehicleGateway, fake_controller_class: type[FakeControllerBase]
 ) -> None:
-    await gateway.lock_status()
+    await gateway.status()
     assert TELEMETRY_PATH not in fake_controller_class.calls
 
 
 async def test_second_call_served_from_cache(
     gateway: VehicleGateway, fake_controller_class: type[FakeControllerBase]
 ) -> None:
-    _, first = await gateway.lock_status()
-    _, second = await gateway.lock_status()
+    _, first = await gateway.status()
+    _, second = await gateway.status()
     assert first.source == "live"
     assert second.source == "cache"
     assert fake_controller_class.calls.count(STATUS_PATH) == 1
@@ -58,10 +58,10 @@ async def test_second_call_served_from_cache(
 async def test_stale_serve_on_transient_failure(
     gateway: VehicleGateway, fake_controller_class: type[FakeControllerBase]
 ) -> None:
-    value, _ = await gateway.lock_status()
+    value, _ = await gateway.status()
     _expire(gateway, "status", seconds=10_000)
     fake_controller_class.failure = ToyotaApiError("Request Failed. 429, slow down.")
-    stale_value, freshness = await gateway.lock_status()
+    stale_value, freshness = await gateway.status()
     assert stale_value is value
     assert freshness.source == "stale_cache"
     assert freshness.age_seconds > 9_000
@@ -75,18 +75,18 @@ async def test_cold_cache_transient_failure_raises_translated(
     await gateway.dashboard()
     fake_controller_class.failure = ToyotaApiError("Request Failed. 429, slow down.")
     with pytest.raises(ToolError) as excinfo:
-        await gateway.lock_status()
+        await gateway.status()
     assert excinfo.value.args[0] == errors.API_UNAVAILABLE
 
 
 async def test_permanent_failure_never_serves_stale(
     gateway: VehicleGateway, fake_controller_class: type[FakeControllerBase]
 ) -> None:
-    await gateway.lock_status()
+    await gateway.status()
     _expire(gateway, "status", seconds=10_000)
     fake_controller_class.failure = ToyotaApiError("Request Failed. 404, gone.")
     with pytest.raises(ToolError) as excinfo:
-        await gateway.lock_status()
+        await gateway.status()
     assert excinfo.value.args[0] == errors.ENDPOINT_CHANGED
 
 
@@ -96,9 +96,9 @@ async def test_rate_limit_never_touches_login(
     await gateway.dashboard()
     fake_controller_class.failure = ToyotaApiError("Request Failed. 429, slow down.")
     with pytest.raises(ToolError):
-        await gateway.lock_status()
+        await gateway.status()
     fake_controller_class.failure = None
-    await gateway.lock_status()
+    await gateway.status()
     assert fake_controller_class.login_count == 1
 
 
@@ -107,7 +107,7 @@ async def test_login_failure_arms_cooldown(
 ) -> None:
     fake_controller_class.login_failure = ToyotaLoginError("Authentication Failed. 401, denied.")
     with pytest.raises(ToolError) as first:
-        await gateway.lock_status()
+        await gateway.status()
     assert first.value.args[0] == errors.LOGIN_FAILED
     with pytest.raises(ToolError) as second:
         await gateway.dashboard()
@@ -154,7 +154,7 @@ async def test_empty_account(
     fake_controller_class.responses["/v2/vehicle/guid"]["payload"] = []
     gateway = VehicleGateway(settings, controller_class=fake_controller_class)
     with pytest.raises(ToolError) as excinfo:
-        await gateway.lock_status()
+        await gateway.status()
     assert excinfo.value.args[0] == errors.NO_VEHICLES
 
 
@@ -198,7 +198,7 @@ async def test_refresh_restocks_snapshots(
 ) -> None:
     await gateway.refresh()
     calls_after_refresh = len(fake_controller_class.calls)
-    await gateway.lock_status()
+    await gateway.status()
     await gateway.dashboard()
     await gateway.location()
     assert len(fake_controller_class.calls) == calls_after_refresh

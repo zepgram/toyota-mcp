@@ -81,6 +81,7 @@ specific car supports. Exit codes: `0` ok · `2` config · `3` auth ·
 | `TOYOTA_VIN` | no | — | Selects one vehicle when several share the account |
 | `TOYOTA_BRAND` | no | `T` | `T` Toyota, `L` Lexus |
 | `TOYOTA_USE_METRIC` | no | `true` | `false` switches to miles/gallons |
+| `TOYOTA_OPEN_DATA` | no | `off` | `fr` enables addresses and fuel prices from French government open data (see below) |
 
 A local `.env` file works too (see `.env.example`). Credentials never touch disk
 otherwise; tokens live in memory only.
@@ -92,15 +93,32 @@ start, or otherwise actuate the vehicle.
 
 | Tool | Example question | Key fields |
 |---|---|---|
+| `toyota_get_vehicle_info` | *What car is this? Is the subscription active?* | model, year, plate, colour, first use, subscriptions, declared remote capabilities |
 | `toyota_get_energy` | *Il reste combien d'autonomie ?* | fuel %, range (km/mi), battery or an explicit "not applicable" note |
-| `toyota_get_status` | *Is the car locked?* | doors/windows/trunk/hood, lock state, tri-state (`unknown` ≠ `open`) |
-| `toyota_get_location` | *Elle est où ?* | lat/lon, place label, Google Maps link |
+| `toyota_get_status` | *Is the car locked? Did I leave the lights on?* | doors/windows/trunk/hood, lock state, lights, rear-seat reminder, overall status |
+| `toyota_get_location` | *Elle est où ?* | lat/lon, address (with open data), Google Maps link |
 | `toyota_get_odometer` | *How many km on the clock?* | odometer with unit |
-| `toyota_get_last_trip` | *Conso du dernier trajet ?* | distance, duration, consumption, EV share, eco scores |
+| `toyota_get_last_trip` | *Conso du dernier trajet ?* | distance, duration, consumption, EV share, hybrid mode split, start/end places |
 | `toyota_get_trips` | *This week's trips?* | individual trips, newest first (≤ 92 days back) |
 | `toyota_get_trip_summary` | *Conso moyenne des 7 derniers jours ?* | rolling-window totals, recomputed L/100km, EV distance & time share |
 | `toyota_get_health` | *Any alerts on the car?* | warning lights, notifications, last recorded service |
+| `toyota_get_climate` | *Is the pre-heating running? What's the preset?* | remote climate state, target temperature, preset (duration, defrosters, heated seats) |
+| `toyota_find_fuel_stations` | *Station la moins chère près de la voiture ?* | cheapest stations for a fuel around the car (France, open data) |
 | `toyota_refresh_data` | *I just parked — refresh.* | bounded cloud re-fetch (never wakes the car) |
+
+## French open data (optional)
+
+With `TOYOTA_OPEN_DATA=fr` the server enriches answers with two French
+government services — no account, no key:
+
+- **Addresses** from the national address base (`api-adresse.data.gouv.fr`) for
+  the parked position and trip start/end points;
+- **Fuel prices** self-reported by stations (`data.economie.gouv.fr`) for
+  `toyota_find_fuel_stations`.
+
+Both only make sense in France. Enabling it sends the car's coordinates to those
+two services; nothing is sent anywhere otherwise. Address lookups fail open (the
+answer simply has no address).
 
 ## How fresh is the data?
 
@@ -169,7 +187,7 @@ returning misleading nulls.
 ```bash
 git clone https://github.com/zepgram/toyota-mcp && cd toyota-mcp
 uv sync
-uv run pytest                       # 89 tests, no network
+uv run pytest                       # 105 tests, no network
 uv run ruff check && uv run ruff format --check
 uv run mypy src tests
 ```

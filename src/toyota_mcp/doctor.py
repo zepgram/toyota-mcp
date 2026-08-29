@@ -119,7 +119,7 @@ async def _diagnose(settings: Settings, dump: bool) -> int:
             print(f"API     data fetch failed ({type(exc).__name__}): {exc}")
             return EXIT_API
         print(f"OK      full data fetch in {time.perf_counter() - started:.1f}s")
-        _print_tool_table(selected)
+        _print_tool_table(selected, settings)
 
         if dump:
             _write_dump(RecordingController.captured)
@@ -137,9 +137,11 @@ def _pick(vehicles: list[Vehicle[Any]], vin: str | None) -> Vehicle[Any] | None:
     return None
 
 
-def _print_tool_table(vehicle: Vehicle[Any]) -> None:
+def _print_tool_table(vehicle: Vehicle[Any], settings: Settings) -> None:
     dashboard = vehicle.dashboard
+    climate = vehicle.climate_settings
     rows = [
+        ("toyota_get_vehicle_info", True, ""),
         (
             "toyota_get_status",
             vehicle.lock_status is not None and vehicle.lock_status.doors is not None,
@@ -162,6 +164,16 @@ def _print_tool_table(vehicle: Vehicle[Any]) -> None:
         ),
         ("toyota_get_health", True, ""),
         ("toyota_get_last_trip / trips / trip_summary", True, "verified on first call"),
+        (
+            "toyota_get_climate",
+            climate is not None and climate.temperature is not None,
+            "remote climate not supported",
+        ),
+        (
+            "toyota_find_fuel_stations",
+            settings.open_data == "fr",
+            "set TOYOTA_OPEN_DATA=fr (French open data)",
+        ),
         ("toyota_refresh_data", True, ""),
     ]
     for tool, available, reason in rows:

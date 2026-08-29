@@ -12,6 +12,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pytoyoda.client import MyT
 from pytoyoda.controller import Controller
 from pytoyoda.exceptions import ToyotaLoginError
+from pytoyoda.models.climate import ClimateSettings, ClimateStatus
 from pytoyoda.models.dashboard import Dashboard
 from pytoyoda.models.location import Location
 from pytoyoda.models.lock_status import LockStatus
@@ -33,7 +34,8 @@ from toyota_mcp.cache import (
     SnapshotCache,
 )
 from toyota_mcp.config import Settings
-from toyota_mcp.models import Freshness, Powertrain
+from toyota_mcp.models import Freshness, Powertrain, StatusExtras
+from toyota_mcp.opendata import FrenchOpenData
 
 T = TypeVar("T")
 
@@ -55,6 +57,10 @@ NO_TELEMETRY_REPORTED = (
     "this vehicle or account may not support connected telemetry."
 )
 NO_SNAPSHOT_NOTE = "No snapshot is cached — the vehicle reported no data on the last refresh."
+STATUS_PATH = "/v1/vehicle/status"
+NO_CLIMATE_REPORTED = (
+    "The vehicle did not report climate data — remote climate may not be supported."
+)
 
 
 @dataclass(frozen=True)
@@ -65,9 +71,44 @@ class HealthBundle:
     service_history_enabled: bool
 
 
+@dataclass(frozen=True)
+class StatusBundle:
+    lock_status: LockStatus
+    extras: StatusExtras
+
+
+@dataclass(frozen=True)
+class ClimateBundle:
+    status: ClimateStatus
+    settings: ClimateSettings
+
+
 @dataclass
 class AppContext:
     gateway: VehicleGateway
+    opendata: FrenchOpenData | None = None
+
+
+def _capturing(base: type[Controller]) -> tuple[type[Controller], dict[str, Any]]:
+    raw: dict[str, Any] = {}
+
+    class CapturingController(base):  # type: ignore[valid-type,misc]
+        async def request_json(
+            self,
+            method: str,
+            endpoint: str,
+            vin: str | None = None,
+            body: dict[str, Any] | None = None,
+            params: dict[str, Any] | None = None,
+            headers: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            payload: dict[str, Any] = await super().request_json(
+                method, endpoint, vin=vin, body=body, params=params, headers=headers
+            )
+            raw[endpoint.split("?")[0]] = payload
+            return payload
+
+    return CapturingController, raw
 
 
 class VehicleGateway:
@@ -77,12 +118,13 @@ class VehicleGateway:
         controller_class: type[Controller] = Controller,
     ) -> None:
         self._settings = settings
+        capturing_class, self._raw = _capturing(controller_class)
         self._client = MyT(
             username=settings.username,
             password=settings.password.get_secret_value(),
             use_metric=settings.use_metric,
             brand=settings.brand,
-            controller_class=controller_class,
+            controller_class=capturing_class,
         )
         self._cache = SnapshotCache()
         self._lock = asyncio.Lock()
@@ -95,8 +137,17 @@ class VehicleGateway:
     def use_metric(self) -> bool:
         return self._settings.use_metric
 
-    async def lock_status(self) -> tuple[LockStatus, Freshness]:
-        return await self._snapshot("status", TTL_STATUS, ["status"], _extract_lock_status)
+    async def status(self) -> tuple[StatusBundle, Freshness]:
+        return await self._snapshot("status", TTL_STATUS, ["status"], self._status_bundle)
+
+    async def climate(self) -> tuple[ClimateBundle, Freshness]:
+        return await self._snapshot(
+            "climate", TTL_STATUS, ["climate_settings", "climate_status"], _extract_climate
+        )
+
+    async def vehicle(self) -> Vehicle[Any]:
+        async with self._lock:
+            return await self._ensure_vehicle()
 
     async def dashboard(self) -> tuple[Dashboard[Any], Freshness]:
         return await self._snapshot(
@@ -160,7 +211,7 @@ class VehicleGateway:
             if vehicle.location is not None:
                 self._cache.store("location", vehicle.location)
             if vehicle.lock_status is not None:
-                self._cache.store("status", vehicle.lock_status)
+                self._cache.store("status", self._status_bundle(vehicle))
             self._last_refresh_at = datetime.now(UTC)
             return (
                 True,
@@ -262,6 +313,15 @@ class VehicleGateway:
             self._login_blocked_until = time.monotonic() + LOGIN_COOLDOWN
         return error
 
+    def _status_bundle(self, vehicle: Vehicle[Any]) -> StatusBundle:
+        if vehicle.lock_status is None:
+            raise ToolError(NO_STATUS_REPORTED)
+        raw_status = self._raw.get(STATUS_PATH) or {}
+        return StatusBundle(
+            lock_status=vehicle.lock_status,
+            extras=StatusExtras.from_payload(raw_status.get("payload")),
+        )
+
     def _skipped_refresh_freshness(self, refreshed_at: datetime) -> Freshness:
         newest = self._newest_volatile_snapshot()
         if newest is not None:
@@ -289,10 +349,14 @@ def vehicle_label(vehicle: Vehicle[Any]) -> str:
     return f"{alias} (…{(vehicle.vin or '????')[-4:]})"
 
 
-def _extract_lock_status(vehicle: Vehicle[Any]) -> LockStatus:
-    if vehicle.lock_status is None:
-        raise ToolError(NO_STATUS_REPORTED)
-    return vehicle.lock_status
+def _extract_climate(vehicle: Vehicle[Any]) -> ClimateBundle:
+    status = vehicle.climate_status
+    settings = vehicle.climate_settings
+    if status is None or settings is None:
+        raise ToolError(NO_CLIMATE_REPORTED)
+    if status.status is None and settings.temperature is None:
+        raise ToolError(NO_CLIMATE_REPORTED)
+    return ClimateBundle(status=status, settings=settings)
 
 
 def _extract_dashboard(vehicle: Vehicle[Any]) -> Dashboard[Any]:

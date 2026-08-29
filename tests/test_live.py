@@ -18,8 +18,9 @@ async def test_live_energy(live_gateway: VehicleGateway) -> None:
 
 
 async def test_live_status(live_gateway: VehicleGateway) -> None:
-    lock_status, _ = await live_gateway.lock_status()
-    assert lock_status.last_updated is not None
+    status, _ = await live_gateway.status()
+    assert status.lock_status.last_updated is not None
+    assert status.extras.overall_status is not None
 
 
 async def test_live_location(live_gateway: VehicleGateway) -> None:
