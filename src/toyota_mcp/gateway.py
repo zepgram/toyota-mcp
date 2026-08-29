@@ -42,7 +42,7 @@ from toyota_mcp.cache import (
     SnapshotCache,
 )
 from toyota_mcp.config import Settings
-from toyota_mcp.models import CalendarPeriod, Freshness, Powertrain, StatusExtras
+from toyota_mcp.models import Freshness, Powertrain, StatusExtras
 from toyota_mcp.opendata import OpenData
 from toyota_mcp.places import Places
 
@@ -199,11 +199,6 @@ class VehicleGateway:
             ["health_status", "notifications", "service_history"],
             self._health_bundle,
         )
-
-    async def calendar_summary(
-        self, period: CalendarPeriod
-    ) -> tuple[Summary[Any] | None, Freshness]:
-        return await self._live(lambda vehicle: _CALENDAR_SUMMARIES[period](vehicle))
 
     async def powertrain(self) -> Powertrain:
         async with self._lock:
@@ -533,16 +528,6 @@ class VehicleGateway:
 def vehicle_label(vehicle: Vehicle[Any]) -> str:
     alias = vehicle.alias if vehicle.alias and vehicle.alias != vehicle.vin else "unnamed"
     return f"{alias} (…{(vehicle.vin or '????')[-4:]})"
-
-
-_CALENDAR_SUMMARIES: dict[
-    CalendarPeriod, Callable[[Vehicle[Any]], Awaitable[Summary[Any] | None]]
-] = {
-    "today": lambda vehicle: vehicle.get_current_day_summary(),
-    "this_week": lambda vehicle: vehicle.get_current_week_summary(),
-    "this_month": lambda vehicle: vehicle.get_current_month_summary(),
-    "this_year": lambda vehicle: vehicle.get_current_year_summary(),
-}
 
 
 def _rejection(response: object) -> str | None:

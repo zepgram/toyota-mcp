@@ -88,21 +88,12 @@ def register(mcp: MCPServer) -> None:
         Pass period to match the app's calendar figures.
         """
         gateway = ctx.request_context.lifespan_context.gateway
-        if period is not None:
-            summary, freshness = await gateway.calendar_summary(period)
-            window_from, window_to = _calendar_window(period)
-            return TripSummaryReport.from_daily_summaries(
-                [summary] if summary else [],
-                window_from,
-                window_to,
-                gateway.use_metric,
-                freshness,
-            ).model_copy(update={"period": period})
-        window_from, window_to = _window(days)
+        window_from, window_to = _calendar_window(period) if period else _window(days)
         summaries, freshness = await gateway.daily_summaries(window_from, window_to)
-        return TripSummaryReport.from_daily_summaries(
+        report = TripSummaryReport.from_daily_summaries(
             summaries, window_from, window_to, gateway.use_metric, freshness
         )
+        return report.model_copy(update={"period": period})
 
 
 async def _annotate_places(
