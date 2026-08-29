@@ -41,6 +41,14 @@ def test_translate_table(exc: Exception, expected: str) -> None:
     assert errors.translate(exc).args[0] == expected
 
 
+@pytest.mark.parametrize("status", [400, 401])
+def test_translate_rejected_request_is_not_called_transient(status: int) -> None:
+    message = errors.translate(ToyotaApiError(f"Request Failed. {status}, denied.")).args[0]
+    assert str(status) in message
+    assert "doctor" in message
+    assert "NOT an authentication problem" not in message
+
+
 def test_translate_validation_error() -> None:
     assert errors.translate(_validation_error()).args[0] == errors.UNEXPECTED_PAYLOAD
 
@@ -64,6 +72,7 @@ def test_translate_unexpected_names_the_type() -> None:
         (ToyotaApiError("Request Failed. 403, gone."), False),
         (ToyotaApiError("Request Failed. 404, nope."), False),
         (ToyotaApiError("no status in message"), True),
+        (ToyotaApiError("Request Failed. 401, expired."), False),
         (httpx.ConnectTimeout("slow"), True),
         (httpx.ConnectError("refused"), True),
         (ToyotaLoginError("Authentication Failed. 401, denied."), False),

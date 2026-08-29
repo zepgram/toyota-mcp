@@ -146,7 +146,22 @@ def test_trips_report_orders_newest_first_and_slices() -> None:
         freshness=_freshness(),
     )
     assert report.returned_count == 1
+    assert report.total_in_window == 2
     assert report.trips[0].started_at == datetime(2026, 8, 28, 8, 0, tzinfo=timezone.utc)
+    assert report.note is not None
+    assert "1 most recent of 2 trips" in report.note
+
+
+def test_trips_report_complete_window_has_no_note() -> None:
+    report = TripsReport.from_trips(
+        [_trip()],
+        window_from=date(2026, 8, 15),
+        window_to=date(2026, 8, 29),
+        limit=10,
+        use_metric=True,
+        freshness=_freshness(),
+    )
+    assert report.total_in_window == report.returned_count == 1
     assert report.note is None
 
 

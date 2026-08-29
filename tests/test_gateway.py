@@ -175,6 +175,15 @@ async def test_refresh_floor(
     assert len(fake_controller_class.calls) == calls_after_first
 
 
+async def test_refresh_skip_without_snapshot_says_so(gateway: VehicleGateway) -> None:
+    await gateway.refresh()
+    gateway._cache.clear()
+    refreshed, _, freshness = await gateway.refresh()
+    assert refreshed is False
+    assert freshness.note is not None
+    assert "No snapshot" in freshness.note
+
+
 async def test_refresh_restocks_snapshots(
     gateway: VehicleGateway, fake_controller_class: type[FakeControllerBase]
 ) -> None:

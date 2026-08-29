@@ -102,9 +102,10 @@ async def test_get_last_trip(server: MCPServer) -> None:
     result = await _call(server, "toyota_get_last_trip")
     assert not result.is_error
     content = result.structured_content
-    assert content["distance"]["unit"] == "km"
-    assert content["fuel_consumed"]["unit"] == "L"
-    assert content["ev_ratio_percent"] is not None
+    assert content["trip"]["distance"]["unit"] == "km"
+    assert content["trip"]["fuel_consumed"]["unit"] == "L"
+    assert content["trip"]["ev_ratio_percent"] is not None
+    assert content["freshness"]["source"] == "live"
 
 
 async def test_get_trips(server: MCPServer) -> None:
@@ -112,10 +113,19 @@ async def test_get_trips(server: MCPServer) -> None:
     assert not result.is_error
     content = result.structured_content
     assert content["returned_count"] == 2
+    assert content["total_in_window"] == 3
+    assert "2 most recent of 3 trips" in content["note"]
     assert len(content["trips"]) == 2
     first, second = content["trips"]
     assert first["started_at"] >= second["started_at"]
     assert "12 months" in content["retention_note"]
+
+
+async def test_get_trips_window_counts_calendar_days_inclusive(server: MCPServer) -> None:
+    result = await _call(server, "toyota_get_trips", {"days": 1})
+    assert not result.is_error
+    content = result.structured_content
+    assert content["window_from"] == content["window_to"]
 
 
 async def test_get_trips_rejects_out_of_range_days(server: MCPServer) -> None:
@@ -142,6 +152,19 @@ async def test_get_health(server: MCPServer) -> None:
     assert content["warning_lights"] == []
     assert len(content["notifications"]) == 10
     assert content["last_service"] is not None
+    assert "HISTORY" in content["service_note"]
+
+
+async def test_get_health_without_service_records(
+    server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    fake_controller_class.responses["/v1/servicehistory/vehicle/summary"]["payload"][
+        "serviceHistories"
+    ] = []
+    result = await _call(server, "toyota_get_health")
+    assert not result.is_error
+    content = result.structured_content
+    assert content["last_service"] is None
     assert "HISTORY" in content["service_note"]
 
 

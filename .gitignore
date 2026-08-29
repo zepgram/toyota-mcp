@@ -2,7 +2,7 @@
 dist/
 toyota-mcp-doctor-dump/
 __pycache__/
-*.py[cov]
+*.py[cod]
 .venv/
 .pytest_cache/
 .mypy_cache/

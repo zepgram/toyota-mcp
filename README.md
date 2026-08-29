@@ -105,7 +105,8 @@ start, or otherwise actuate the vehicle.
 
 Toyota's cloud is **push-on-event**: the car uploads telemetry at ignition-off
 and its position when it parks. Polling faster returns the same payload, so
-this server caches snapshots for ~5 minutes and serializes all upstream calls
+this server caches snapshots for 5 minutes (15 for health and service data)
+and serializes all upstream calls
 (the gateway rate-limits bursts aggressively).
 
 Every response carries a `freshness` block:
@@ -155,7 +156,9 @@ returning misleading nulls.
 
 - Credentials come from environment variables only; the password is held as a
   `SecretStr` and never logged.
-- GPS coordinates, VINs and payloads are never written to logs.
+- GPS coordinates, VINs and payloads are never written to logs — pytoyoda's
+  debug logging (which dumps full HTTP exchanges) is disabled; only warnings
+  reach stderr.
 - No tokens or snapshots are persisted to disk.
 - `doctor --dump` output is recursively redacted, but review it manually before
   sharing.
@@ -165,7 +168,7 @@ returning misleading nulls.
 ```bash
 git clone https://github.com/zepgram/toyota-mcp && cd toyota-mcp
 uv sync
-uv run pytest                       # 78 tests, no network
+uv run pytest                       # 89 tests, no network
 uv run ruff check && uv run ruff format --check
 uv run mypy src tests
 ```

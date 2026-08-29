@@ -54,6 +54,7 @@ NO_TELEMETRY_REPORTED = (
     "The vehicle did not report telemetry — "
     "this vehicle or account may not support connected telemetry."
 )
+NO_SNAPSHOT_NOTE = "No snapshot is cached — the vehicle reported no data on the last refresh."
 
 
 @dataclass(frozen=True)
@@ -88,7 +89,7 @@ class VehicleGateway:
         self._vehicle: Vehicle[Any] | None = None
         self._login_error: ToolError | None = None
         self._login_blocked_until = 0.0
-        self._last_refresh = 0.0
+        self._last_refresh_at: datetime | None = None
 
     @property
     def use_metric(self) -> bool:
@@ -138,21 +139,14 @@ class VehicleGateway:
 
     async def refresh(self) -> tuple[bool, str, Freshness]:
         async with self._lock:
-            elapsed = time.monotonic() - self._last_refresh
-            if self._last_refresh and elapsed < REFRESH_FLOOR:
-                note = (
-                    f"Refresh skipped — data was already refreshed {int(elapsed)}s ago and "
-                    "Toyota only receives new data when the car parks."
-                )
-                newest = self._newest_volatile_snapshot()
-                freshness = (
-                    _freshness(newest, "cache")
-                    if newest
-                    else Freshness(
-                        fetched_at=datetime.now(timezone.utc), age_seconds=0, source="cache"
+            if self._last_refresh_at is not None:
+                elapsed = (datetime.now(timezone.utc) - self._last_refresh_at).total_seconds()
+                if elapsed < REFRESH_FLOOR:
+                    note = (
+                        f"Refresh skipped — data was already refreshed {int(elapsed)}s ago and "
+                        "Toyota only receives new data when the car parks."
                     )
-                )
-                return False, note, freshness
+                    return False, note, self._skipped_refresh_freshness(self._last_refresh_at)
             self._check_cooldown()
             vehicle = await self._ensure_vehicle()
             try:
@@ -167,12 +161,11 @@ class VehicleGateway:
                 self._cache.store("location", vehicle.location)
             if vehicle.lock_status is not None:
                 self._cache.store("status", vehicle.lock_status)
-            self._last_refresh = time.monotonic()
-            now = datetime.now(timezone.utc)
+            self._last_refresh_at = datetime.now(timezone.utc)
             return (
                 True,
                 "Refreshed from Toyota's cloud.",
-                Freshness(fetched_at=now, age_seconds=0, source="live"),
+                Freshness(fetched_at=self._last_refresh_at, age_seconds=0, source="live"),
             )
 
     async def aclose(self) -> None:
@@ -274,6 +267,17 @@ class VehicleGateway:
             self._login_blocked_until = time.monotonic() + LOGIN_COOLDOWN
         return error
 
+    def _skipped_refresh_freshness(self, refreshed_at: datetime) -> Freshness:
+        newest = self._newest_volatile_snapshot()
+        if newest is not None:
+            return _freshness(newest, "cache")
+        return Freshness(
+            fetched_at=refreshed_at,
+            age_seconds=round((datetime.now(timezone.utc) - refreshed_at).total_seconds(), 1),
+            source="cache",
+            note=NO_SNAPSHOT_NOTE,
+        )
+
     def _newest_volatile_snapshot(self) -> Snapshot | None:
         snapshots = [
             snapshot
@@ -308,12 +312,19 @@ def _extract_health(vehicle: Vehicle[Any]) -> HealthBundle:
     dashboard = vehicle.dashboard
     raw_lights = (dashboard.warning_lights if dashboard else None) or []
     warning_lights = [str(light) for light in raw_lights]
+    history = vehicle.service_history
     return HealthBundle(
         warning_lights=warning_lights,
         notifications=list(vehicle.notifications or []),
-        latest_service=vehicle.get_latest_service_history(),
-        service_history_enabled=vehicle.service_history is not None,
+        latest_service=_latest_service(history),
+        service_history_enabled=history is not None,
     )
+
+
+def _latest_service(history: list[ServiceHistory[Any]] | None) -> ServiceHistory[Any] | None:
+    if not history:
+        return None
+    return max(history, key=lambda service: service.service_date or date.min)
 
 
 def _freshness(snapshot: Snapshot, source: Literal["live", "cache"]) -> Freshness:

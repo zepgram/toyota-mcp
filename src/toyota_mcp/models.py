@@ -238,12 +238,20 @@ class TripReport(BaseModel):
         )
 
 
+class LastTripReport(BaseModel):
+    trip: TripReport
+    freshness: Freshness
+
+
 class TripsReport(BaseModel):
     window_from: date
     window_to: date
     trips: list[TripReport] = Field(description="Newest first.")
     returned_count: int
-    note: str | None = Field(default=None, description="Set when the window contains no trips.")
+    total_in_window: int = Field(description="Trips recorded in the window before applying limit.")
+    note: str | None = Field(
+        default=None, description="Set when the window is empty or the list was truncated by limit."
+    )
     retention_note: str
     freshness: Freshness
 
@@ -268,11 +276,17 @@ class TripsReport(BaseModel):
             note = (
                 f"No trips recorded between {window_from.isoformat()} and {window_to.isoformat()}."
             )
+        elif len(trips) > len(reports):
+            note = (
+                f"Showing the {len(reports)} most recent of {len(trips)} trips in the window — "
+                "raise limit (max 50) to see more."
+            )
         return cls(
             window_from=window_from,
             window_to=window_to,
             trips=reports,
             returned_count=len(reports),
+            total_in_window=len(trips),
             note=note,
             retention_note=RETENTION_NOTE,
             freshness=freshness,

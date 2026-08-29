@@ -47,6 +47,13 @@ def vin_not_found(requested_vin: str, available: list[str]) -> ToolError:
     )
 
 
+def request_rejected(status: int) -> ToolError:
+    return ToolError(
+        f"Toyota rejected the request (HTTP {status}). If this persists, re-check "
+        "TOYOTA_USERNAME / TOYOTA_PASSWORD or run `uvx toyota-mcp doctor`."
+    )
+
+
 def api_status_code(exc: ToyotaApiError) -> int | None:
     match = _API_ERROR_STATUS.search(str(exc))
     return int(match.group(1)) if match else None
@@ -54,9 +61,12 @@ def api_status_code(exc: ToyotaApiError) -> int | None:
 
 def is_transient(exc: Exception) -> bool:
     if isinstance(exc, ToyotaApiError):
-        status = api_status_code(exc)
-        return status is None or status == 429 or status >= 500
+        return _is_transient_status(api_status_code(exc))
     return isinstance(exc, httpx.TimeoutException | httpx.TransportError)
+
+
+def _is_transient_status(status: int | None) -> bool:
+    return status is None or status == 429 or status >= 500
 
 
 def translate(exc: Exception) -> ToolError:
@@ -70,7 +80,9 @@ def translate(exc: Exception) -> ToolError:
         status = api_status_code(exc)
         if status in (403, 404):
             return ToolError(ENDPOINT_CHANGED)
-        return ToolError(API_UNAVAILABLE)
+        if status is None or _is_transient_status(status):
+            return ToolError(API_UNAVAILABLE)
+        return request_rejected(status)
     if isinstance(exc, ToyotaInternalError | ValidationError):
         return ToolError(UNEXPECTED_PAYLOAD)
     if isinstance(exc, httpx.TimeoutException | httpx.TransportError):
