@@ -1,12 +1,14 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.zepgram/toyota",
-  "description": "Connect a MyToyota or MyLexus Europe account to any MCP client: fuel, range, location, trips, EV share, health, climate and charging, plus optional remote commands.",
+  "title": "Toyota & Lexus",
+  "description": "Toyota & Lexus vehicles: fuel, range, location, trips, health, climate, charging, commands",
   "repository": {
     "url": "https://github.com/zepgram/toyota-mcp",
     "source": "github"
   },
   "version": "0.1.0",
+  "websiteUrl": "https://github.com/zepgram/toyota-mcp",
   "packages": [
     {
       "registryType": "pypi",
@@ -70,6 +72,5 @@
         }
       ]
     }
-  ],
-  "websiteUrl": "https://github.com/zepgram/toyota-mcp"
+  ]
 }
