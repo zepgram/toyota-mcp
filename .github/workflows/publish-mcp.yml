@@ -17,8 +17,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.tag || github.ref }}
+      # On a tag push this checks out the tag; a manual run publishes the branch's
+      # metadata under the version of an existing tag.
       - name: Take the version from the tag
         run: |
           tag="${{ inputs.tag || github.ref_name }}"
