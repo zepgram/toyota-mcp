@@ -71,12 +71,14 @@ async def test_get_energy_full_hybrid(server: MCPServer) -> None:
     assert content["total_range"] == {"value": 634.0, "unit": "km"}
     assert content["battery"] is None
     assert content["battery_note"] == FULL_HYBRID_BATTERY_NOTE
+    assert content["freshness"]["vehicle_reported_at"] is not None
 
 
 async def test_get_odometer(server: MCPServer) -> None:
     result = await _call(server, "toyota_get_odometer")
     assert not result.is_error
     assert result.structured_content["odometer"] == {"value": 30420.0, "unit": "km"}
+    assert result.structured_content["freshness"]["vehicle_reported_at"] is not None
 
 
 async def test_get_location(server: MCPServer) -> None:

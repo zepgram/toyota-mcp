@@ -14,6 +14,7 @@ from pytoyoda.exceptions import ToyotaLoginError
 from pytoyoda.models.vehicle import Vehicle
 
 from toyota_mcp.config import Settings
+from toyota_mcp.gateway import vehicle_label
 
 EXIT_OK = 0
 EXIT_CONFIG = 2
@@ -102,8 +103,8 @@ async def _diagnose(settings: Settings, dump: bool) -> int:
             return EXIT_NO_VEHICLE
         for vehicle in vehicles:
             print(
-                f"OK      vehicle: {vehicle.alias or 'unnamed'} "
-                f"(VIN …{(vehicle.vin or '????')[-4:]}, {vehicle.type or 'unknown powertrain'})"
+                f"OK      vehicle: {vehicle_label(vehicle)} — "
+                f"{vehicle.type or 'unknown powertrain'}"
             )
 
         selected = _pick(vehicles, settings.vin)

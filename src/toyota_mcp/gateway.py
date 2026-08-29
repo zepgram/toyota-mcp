@@ -234,10 +234,7 @@ class VehicleGateway:
     def _select_vehicle(self, vehicles: list[Vehicle[Any]]) -> Vehicle[Any]:
         if not vehicles:
             raise ToolError(errors.NO_VEHICLES)
-        available = [
-            f"{vehicle.alias or 'unnamed'} (…{(vehicle.vin or '????')[-4:]})"
-            for vehicle in vehicles
-        ]
+        available = [vehicle_label(vehicle) for vehicle in vehicles]
         if self._settings.vin is None:
             if len(vehicles) == 1:
                 return vehicles[0]
@@ -285,6 +282,11 @@ class VehicleGateway:
         if not snapshots:
             return None
         return max(snapshots, key=lambda snapshot: snapshot.fetched_at)
+
+
+def vehicle_label(vehicle: Vehicle[Any]) -> str:
+    alias = vehicle.alias if vehicle.alias and vehicle.alias != vehicle.vin else "unnamed"
+    return f"{alias} (…{(vehicle.vin or '????')[-4:]})"
 
 
 def _extract_lock_status(vehicle: Vehicle[Any]) -> LockStatus:

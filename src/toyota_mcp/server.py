@@ -35,7 +35,13 @@ def create_server(gateway: VehicleGateway) -> MCPServer:
         finally:
             await gateway.aclose()
 
-    mcp = MCPServer("toyota", version=__version__, instructions=INSTRUCTIONS, lifespan=lifespan)
+    mcp = MCPServer(
+        "toyota",
+        version=__version__,
+        instructions=INSTRUCTIONS,
+        lifespan=lifespan,
+        log_level="WARNING",
+    )
     register_all(mcp)
     return mcp
 

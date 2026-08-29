@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -39,6 +40,7 @@ FUEL_ONLY_BATTERY_NOTE = "Not applicable: combustion-only vehicle — there is n
 BATTERY_UNAVAILABLE_NOTE = (
     "Battery data unavailable: the vehicle has not reported electric status yet."
 )
+_VIN_PREFIX = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b\s*:?\s*")
 
 
 class Quantity(BaseModel):
@@ -168,7 +170,7 @@ class EnergyReport(BaseModel):
             total_range=_quantity(dashboard.range_with_unit),
             battery=battery,
             battery_note=battery_note,
-            freshness=freshness,
+            freshness=freshness.with_vehicle_time(telemetry_reported_at(dashboard)),
         )
 
 
@@ -383,7 +385,7 @@ class NotificationItem(BaseModel):
             date=notification.date,
             category=notification.category,
             type=notification.type,
-            message=notification.message,
+            message=_VIN_PREFIX.sub("", notification.message) if notification.message else None,
             read=notification.read is not None,
         )
 
@@ -417,6 +419,13 @@ class RefreshReport(BaseModel):
     refreshed: bool
     note: str
     freshness: Freshness
+
+
+def telemetry_reported_at(dashboard: Dashboard[Any]) -> datetime | None:
+    # pytoyoda only carries the telemetry timestamp on this private attribute.
+    telemetry = getattr(dashboard, "_telemetry", None)
+    reported_at = getattr(telemetry, "timestamp", None)
+    return reported_at if isinstance(reported_at, datetime) else None
 
 
 def _door(door: Door | None) -> DoorReport:

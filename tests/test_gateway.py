@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
@@ -11,7 +13,7 @@ from tests.conftest import LOLA_VIN, FakeControllerBase
 from toyota_mcp import errors
 from toyota_mcp.cache import Snapshot
 from toyota_mcp.config import Settings
-from toyota_mcp.gateway import VehicleGateway
+from toyota_mcp.gateway import VehicleGateway, vehicle_label
 
 STATUS_PATH = "/v1/vehicle/status"
 TELEMETRY_PATH = "/v3/telemetry"
@@ -137,6 +139,13 @@ async def test_unknown_vin_lists_available(
     message = excinfo.value.args[0]
     assert "…6789" in message
     assert "Lola" in message
+
+
+def test_vehicle_label_never_exposes_a_full_vin() -> None:
+    unnamed = SimpleNamespace(alias="JTDZARBE0RJ000099", vin="JTDZARBE0RJ000099")
+    named = SimpleNamespace(alias="Lola", vin=LOLA_VIN)
+    assert vehicle_label(cast(Any, unnamed)) == "unnamed (…0099)"
+    assert vehicle_label(cast(Any, named)) == "Lola (…0042)"
 
 
 async def test_empty_account(

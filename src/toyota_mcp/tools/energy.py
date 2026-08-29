@@ -3,7 +3,7 @@ from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 
 from toyota_mcp.gateway import AppContext
-from toyota_mcp.models import EnergyReport, OdometerReport, Quantity
+from toyota_mcp.models import EnergyReport, OdometerReport, Quantity, telemetry_reported_at
 from toyota_mcp.tools.base import READ_ONLY
 
 
@@ -34,5 +34,5 @@ def register(mcp: MCPServer) -> None:
             raise ToolError("The vehicle did not report an odometer reading.")
         return OdometerReport(
             odometer=Quantity(value=float(odometer.value), unit=str(odometer.unit)),
-            freshness=freshness,
+            freshness=freshness.with_vehicle_time(telemetry_reported_at(dashboard)),
         )

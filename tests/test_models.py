@@ -11,6 +11,7 @@ from toyota_mcp.models import (
     DoorsReport,
     EnergyReport,
     Freshness,
+    NotificationItem,
     Quantity,
     TripReport,
     TripsReport,
@@ -177,6 +178,19 @@ def test_trips_report_empty_window_is_typed_not_error() -> None:
     assert report.trips == []
     assert report.note is not None
     assert "No trips recorded" in report.note
+
+
+def test_notification_strips_vin_toyota_prepends_to_messages() -> None:
+    notification = SimpleNamespace(
+        date=None,
+        category="VehicleStatusAlert",
+        type="alert",
+        message="JTDZARBE0RJ000042: Veuillez contrôler les sièges arrière.",
+        read=None,
+    )
+    item = NotificationItem.from_notification(cast(Any, notification))
+    assert item.message == "Veuillez contrôler les sièges arrière."
+    assert item.read is False
 
 
 def _summary(**overrides: Any) -> Any:
