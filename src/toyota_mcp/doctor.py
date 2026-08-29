@@ -175,6 +175,11 @@ def _print_tool_table(vehicle: Vehicle[Any], settings: Settings) -> None:
             "set TOYOTA_OPEN_DATA=fr (French open data)",
         ),
         ("toyota_refresh_data", True, ""),
+        (
+            "toyota_lock_doors / unlock_doors / start_climate / stop_climate",
+            settings.remote_commands,
+            "set TOYOTA_REMOTE_COMMANDS=true (opt-in)",
+        ),
     ]
     for tool, available, reason in rows:
         marker = "OK     " if available else "MISSING"

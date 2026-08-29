@@ -20,6 +20,14 @@ INSTRUCTIONS = (
     "vehicle_reported_at or age_seconds when the user asks about current state. "
     "Nothing here actuates the vehicle."
 )
+COMMANDS_INSTRUCTIONS = (
+    "Access to a MyToyota Europe vehicle. Every response carries a freshness block: "
+    "the car uploads data when it parks, so cite vehicle_reported_at or age_seconds "
+    "when the user asks about current state. Remote commands (lock, unlock, climate) "
+    "are enabled: send one only when the user explicitly asked for it in this "
+    "conversation, never on your own initiative; call with confirm=false to preview, "
+    "then confirm=true once the user agreed."
+)
 
 USAGE = (
     "usage: toyota-mcp                   start the MCP server on stdio\n"
@@ -28,7 +36,11 @@ USAGE = (
 )
 
 
-def create_server(gateway: VehicleGateway, opendata: FrenchOpenData | None = None) -> MCPServer:
+def create_server(
+    gateway: VehicleGateway,
+    opendata: FrenchOpenData | None = None,
+    remote_commands: bool = False,
+) -> MCPServer:
     @asynccontextmanager
     async def lifespan(server: MCPServer) -> AsyncIterator[AppContext]:
         try:
@@ -41,11 +53,11 @@ def create_server(gateway: VehicleGateway, opendata: FrenchOpenData | None = Non
     mcp = MCPServer(
         "toyota",
         version=__version__,
-        instructions=INSTRUCTIONS,
+        instructions=COMMANDS_INSTRUCTIONS if remote_commands else INSTRUCTIONS,
         lifespan=lifespan,
         log_level="WARNING",
     )
-    register_all(mcp)
+    register_all(mcp, remote_commands=remote_commands)
     return mcp
 
 
@@ -88,7 +100,7 @@ def main() -> None:
         raise SystemExit(2)
     settings = load_settings()
     opendata = FrenchOpenData() if settings.open_data == "fr" else None
-    create_server(VehicleGateway(settings), opendata).run()
+    create_server(VehicleGateway(settings), opendata, settings.remote_commands).run()
 
 
 if __name__ == "__main__":

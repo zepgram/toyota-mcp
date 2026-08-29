@@ -82,14 +82,15 @@ specific car supports. Exit codes: `0` ok · `2` config · `3` auth ·
 | `TOYOTA_BRAND` | no | `T` | `T` Toyota, `L` Lexus |
 | `TOYOTA_USE_METRIC` | no | `true` | `false` switches to miles/gallons |
 | `TOYOTA_OPEN_DATA` | no | `off` | `fr` enables addresses and fuel prices from French government open data (see below) |
+| `TOYOTA_REMOTE_COMMANDS` | no | `false` | `true` registers the lock / unlock / climate tools (see below) |
 
 A local `.env` file works too (see `.env.example`). Credentials never touch disk
 otherwise; tokens live in memory only.
 
 ## Available tools
 
-All tools are **read-only** (`readOnlyHint: true`). Nothing here can unlock,
-start, or otherwise actuate the vehicle.
+By default every tool is **read-only** (`readOnlyHint: true`) and nothing can
+actuate the vehicle. Remote commands exist but are opt-in — see below.
 
 | Tool | Example question | Key fields |
 |---|---|---|
@@ -105,6 +106,30 @@ start, or otherwise actuate the vehicle.
 | `toyota_get_climate` | *Is the pre-heating running? What's the preset?* | remote climate state, target temperature, preset (duration, defrosters, heated seats) |
 | `toyota_find_fuel_stations` | *Station la moins chère près de la voiture ?* | cheapest stations for a fuel around the car (France, open data) |
 | `toyota_refresh_data` | *I just parked — refresh.* | bounded cloud re-fetch (never wakes the car) |
+
+## Remote commands (optional)
+
+Set `TOYOTA_REMOTE_COMMANDS=true` to register four write tools:
+
+| Tool | Effect | Annotation |
+|---|---|---|
+| `toyota_lock_doors` | locks doors and trunk | reversible |
+| `toyota_unlock_doors` | unlocks the doors | **destructive** |
+| `toyota_start_climate` | starts pre-conditioning at the preset (or a given temperature, 15–30 °C by 0.5) — on a hybrid this runs the engine | **destructive** |
+| `toyota_stop_climate` | stops pre-conditioning | reversible |
+
+Safety model:
+
+- Every command takes a `confirm` parameter. `confirm=false` (the default)
+  returns a preview and **sends nothing**; the agent is instructed to preview,
+  get the user's agreement, then call with `confirm=true`.
+- Your MCP host still applies its own permission prompt for non-read-only tools.
+- The server **verifies** the outcome: after sending, it polls the state the
+  car reports (up to 60 s) and answers `verified`, `accepted` (Toyota took
+  the command, the car has not confirmed yet) or `failed` with Toyota's reason
+  (e.g. the car was moving).
+- Commands are rate-limited to one every 10 s. Horn, lights and window
+  commands are deliberately not exposed.
 
 ## French open data (optional)
 
@@ -159,7 +184,7 @@ returning misleading nulls.
 - Accounts with MFA/2FA cannot authenticate.
 - Toyota retains roughly **12 months** of trip history server-side.
 - Lock/door status can lag reality; every answer self-reports its age.
-- Phase 1 is strictly read-only; remote commands are out of scope.
+- Remote commands are off unless `TOYOTA_REMOTE_COMMANDS=true`.
 
 ## Troubleshooting
 
@@ -187,7 +212,7 @@ returning misleading nulls.
 ```bash
 git clone https://github.com/zepgram/toyota-mcp && cd toyota-mcp
 uv sync
-uv run pytest                       # 105 tests, no network
+uv run pytest                       # 115 tests, no network
 uv run ruff check && uv run ruff format --check
 uv run mypy src tests
 ```

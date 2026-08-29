@@ -2,6 +2,7 @@ from mcp.server import MCPServer
 
 from toyota_mcp.tools import (
     climate,
+    commands,
     energy,
     fuel,
     health,
@@ -16,7 +17,7 @@ from toyota_mcp.tools.base import READ_ONLY
 __all__ = ["READ_ONLY", "register_all"]
 
 
-def register_all(mcp: MCPServer) -> None:
+def register_all(mcp: MCPServer, remote_commands: bool = False) -> None:
     vehicle.register(mcp)
     status.register(mcp)
     energy.register(mcp)
@@ -26,3 +27,5 @@ def register_all(mcp: MCPServer) -> None:
     climate.register(mcp)
     fuel.register(mcp)
     refresh.register(mcp)
+    if remote_commands:
+        commands.register(mcp)

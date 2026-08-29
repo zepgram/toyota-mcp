@@ -7,6 +7,7 @@ TTL_LOCATION = 300
 TTL_HEALTH_BUNDLE = 900
 REFRESH_FLOOR = 60
 LOGIN_COOLDOWN = 60
+COMMAND_COOLDOWN = 10
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,9 @@ class SnapshotCache:
         snapshot = Snapshot(value=value, fetched_at=datetime.now(UTC))
         self._entries[key] = snapshot
         return snapshot
+
+    def drop(self, key: str) -> None:
+        self._entries.pop(key, None)
 
     def clear(self) -> None:
         self._entries.clear()

@@ -76,9 +76,18 @@ def load_responses() -> dict[str, Any]:
     }
 
 
+COMMAND_PATH = "/v1/global/remote/command"
+CLIMATE_CONTROL_PATH = "/v2/remote/climate-control"
+ACCEPTED = {
+    "status": {"messages": [{"responseCode": "CTP-GENERIC-20001", "description": "Success"}]}
+}
+
+
 class FakeControllerBase(Controller):
     responses: ClassVar[dict[str, Any]]
     calls: ClassVar[list[str]]
+    commands: ClassVar[list[tuple[str, dict[str, Any]]]]
+    commands_take_effect: ClassVar[bool]
     failure: ClassVar[Exception | None]
     login_failure: ClassVar[Exception | None]
     login_count: ClassVar[int]
@@ -106,7 +115,24 @@ class FakeControllerBase(Controller):
         cls.calls.append(path)
         if cls.failure is not None:
             raise cls.failure
+        if method == "POST":
+            cls.commands.append((path, body or {}))
+            if cls.commands_take_effect:
+                _apply_command(cls.responses, path, body or {})
+            return copy.deepcopy(ACCEPTED)
         return copy.deepcopy(cls.responses[path])
+
+
+def _apply_command(responses: dict[str, Any], path: str, body: dict[str, Any]) -> None:
+    if path == COMMAND_PATH and body.get("command") in ("door-lock", "door-unlock"):
+        state = "locked" if body["command"] == "door-lock" else "unlocked"
+        doors = responses["/v1/vehicle/status"]["payload"]["doors"]
+        for door in doors.values():
+            if "lockStatus" in door:
+                door["lockStatus"]["status"] = state
+    if path == CLIMATE_CONTROL_PATH:
+        status = "running" if body.get("command") == "start" else "stopped"
+        responses["/v1/vehicle/climate-status"]["payload"]["status"] = status
 
 
 @pytest.fixture
@@ -117,6 +143,8 @@ def fake_controller_class() -> type[FakeControllerBase]:
         {
             "responses": load_responses(),
             "calls": [],
+            "commands": [],
+            "commands_take_effect": True,
             "failure": None,
             "login_failure": None,
             "login_count": 0,
@@ -138,6 +166,21 @@ def settings() -> Settings:
 @pytest.fixture
 def gateway(settings: Settings, fake_controller_class: type[FakeControllerBase]) -> VehicleGateway:
     return VehicleGateway(settings, controller_class=fake_controller_class)
+
+
+@pytest.fixture
+def command_gateway(
+    fake_controller_class: type[FakeControllerBase],
+) -> VehicleGateway:
+    settings = Settings(
+        username="user@example.com", password="secret", use_metric=True, remote_commands=True
+    )
+    return VehicleGateway(
+        settings,
+        controller_class=fake_controller_class,
+        command_poll_interval=0,
+        command_timeout=0,
+    )
 
 
 @pytest.fixture

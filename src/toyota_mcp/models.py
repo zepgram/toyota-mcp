@@ -65,6 +65,8 @@ OPEN_DATA_DISABLED = (
     "data.economie.gouv.fr)."
 )
 LightState = Literal["on", "off", "unknown"]
+CommandStatus = Literal["needs_confirmation", "verified", "accepted", "failed"]
+CONFIRMATION_NOTE = "Nothing was sent. Ask the user to confirm, then call again with confirm=true."
 
 
 class Quantity(BaseModel):
@@ -197,15 +199,8 @@ class StatusReport(BaseModel):
     def from_lock_status(
         cls, lock_status: LockStatus, extras: StatusExtras, freshness: Freshness
     ) -> StatusReport:
-        doors = lock_status.doors
         windows = lock_status.windows
-        door_reports = DoorsReport(
-            driver=_door(doors.driver_seat if doors else None),
-            passenger=_door(doors.passenger_seat if doors else None),
-            driver_rear=_door(doors.driver_rear_seat if doors else None),
-            passenger_rear=_door(doors.passenger_rear_seat if doors else None),
-            trunk=_door(doors.trunk if doors else None),
-        )
+        door_reports = _doors_report(lock_status)
         window_reports = WindowsReport(
             driver=_window(windows.driver_seat if windows else None),
             passenger=_window(windows.passenger_seat if windows else None),
@@ -651,6 +646,21 @@ class TripSummaryReport(BaseModel):
         )
 
 
+class CommandReport(BaseModel):
+    command: str
+    status: CommandStatus = Field(
+        description=(
+            "'needs_confirmation' = nothing was sent; 'verified' = the car reported the new "
+            "state; 'accepted' = Toyota accepted the command but the car has not confirmed it "
+            "yet; 'failed' = the car rejected it."
+        )
+    )
+    detail: str
+    doors: StatusReport | None = None
+    climate: ClimateReport | None = None
+    elapsed_seconds: float | None = None
+
+
 class FuelStationsReport(BaseModel):
     fuel: FuelKind
     radius_km: int
@@ -714,6 +724,21 @@ def telemetry_reported_at(dashboard: Dashboard[Any]) -> datetime | None:
     telemetry = getattr(dashboard, "_telemetry", None)
     reported_at = getattr(telemetry, "timestamp", None)
     return reported_at if isinstance(reported_at, datetime) else None
+
+
+def lock_state_of(lock_status: LockStatus) -> LockState:
+    return _overall_lock(_doors_report(lock_status))
+
+
+def _doors_report(lock_status: LockStatus) -> DoorsReport:
+    doors = lock_status.doors
+    return DoorsReport(
+        driver=_door(doors.driver_seat if doors else None),
+        passenger=_door(doors.passenger_seat if doors else None),
+        driver_rear=_door(doors.driver_rear_seat if doors else None),
+        passenger_rear=_door(doors.passenger_rear_seat if doors else None),
+        trunk=_door(doors.trunk if doors else None),
+    )
 
 
 def _lights(raw: _RawLights | None) -> LightsReport | None:

@@ -7,7 +7,7 @@ from mcp.client import Client
 from mcp.server import MCPServer
 from pytoyoda.exceptions import ToyotaApiError
 
-from tests.conftest import BAN_LABEL, FakeControllerBase
+from tests.conftest import BAN_LABEL, CLIMATE_CONTROL_PATH, COMMAND_PATH, FakeControllerBase
 from toyota_mcp import errors
 from toyota_mcp.gateway import VehicleGateway
 from toyota_mcp.models import FULL_HYBRID_BATTERY_NOTE
@@ -40,6 +40,19 @@ def offline_server(gateway: VehicleGateway) -> MCPServer:
     return create_server(gateway)
 
 
+@pytest.fixture
+def command_server(command_gateway: VehicleGateway) -> MCPServer:
+    return create_server(command_gateway, remote_commands=True)
+
+
+COMMAND_TOOLS = {
+    "toyota_lock_doors",
+    "toyota_unlock_doors",
+    "toyota_start_climate",
+    "toyota_stop_climate",
+}
+
+
 async def _call(server: MCPServer, tool: str, arguments: dict[str, Any] | None = None) -> Any:
     async with Client(server) as client:
         return await client.call_tool(tool, arguments or {})
@@ -57,6 +70,131 @@ async def test_tools_list_contract(server: MCPServer) -> None:
         assert tool.annotations.open_world_hint is False
         assert tool.output_schema is not None
         assert tool.description
+
+
+async def test_commands_are_opt_in(server: MCPServer, command_server: MCPServer) -> None:
+    async with Client(server) as client:
+        default_tools = {tool.name for tool in (await client.list_tools()).tools}
+    async with Client(command_server) as client:
+        listing = (await client.list_tools()).tools
+    command_tools = {tool.name: tool for tool in listing if tool.name in COMMAND_TOOLS}
+    assert not default_tools & COMMAND_TOOLS
+    assert set(command_tools) == COMMAND_TOOLS
+    for name, tool in command_tools.items():
+        assert tool.annotations is not None
+        assert tool.annotations.read_only_hint is False
+        assert tool.annotations.destructive_hint is (
+            name in {"toyota_unlock_doors", "toyota_start_climate"}
+        )
+
+
+async def test_lock_preview_sends_nothing(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    result = await _call(command_server, "toyota_lock_doors")
+    assert not result.is_error
+    content = result.structured_content
+    assert content["status"] == "needs_confirmation"
+    assert "confirm=true" in content["detail"]
+    assert content["doors"]["all_locked"] == "locked"
+    assert fake_controller_class.commands == []
+
+
+async def test_unlock_then_lock_verified(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    unlocked = await _call(command_server, "toyota_unlock_doors", {"confirm": True})
+    assert not unlocked.is_error
+    assert unlocked.structured_content["status"] == "verified"
+    assert unlocked.structured_content["doors"]["all_locked"] == "unlocked"
+    assert fake_controller_class.commands == [(COMMAND_PATH, {"command": "door-unlock"})]
+    locked = await _call(command_server, "toyota_lock_doors", {"confirm": True})
+    assert locked.is_error
+    assert "wait" in locked.content[0].text
+
+
+async def test_lock_already_locked_says_so(command_server: MCPServer) -> None:
+    result = await _call(command_server, "toyota_lock_doors", {"confirm": True})
+    assert not result.is_error
+    assert result.structured_content["status"] == "verified"
+    assert "already" in result.structured_content["detail"]
+
+
+async def test_unlock_not_confirmed_by_car_is_reported_accepted(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    fake_controller_class.commands_take_effect = False
+    result = await _call(command_server, "toyota_unlock_doors", {"confirm": True})
+    assert not result.is_error
+    content = result.structured_content
+    assert content["status"] == "accepted"
+    assert "has not reported" in content["detail"]
+    assert content["doors"]["all_locked"] == "locked"
+
+
+async def test_unlock_rejected_by_car_surfaces_toyota_reason(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    fake_controller_class.commands_take_effect = False
+    groups = fake_controller_class.responses["/v2/notification/history"]["payload"]
+    template = dict(groups[0]["notifications"][0])
+    template.update(
+        category="RemoteControl",
+        message=(
+            "JTDZARBE0RJ000042: cette demande ne peut pas être complétée pendant que "
+            "le véhicule roule. [40]"
+        ),
+        notificationDate="2099-01-01T00:00:00.000Z",
+    )
+    groups[0]["notifications"].insert(0, template)
+    result = await _call(command_server, "toyota_unlock_doors", {"confirm": True})
+    assert not result.is_error
+    content = result.structured_content
+    assert content["status"] == "failed"
+    assert "véhicule roule" in content["detail"]
+    assert "JTDZARBE" not in content["detail"]
+
+
+async def test_start_climate_with_preset_temperature(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    result = await _call(command_server, "toyota_start_climate", {"confirm": True})
+    assert not result.is_error
+    content = result.structured_content
+    assert content["status"] == "verified"
+    assert content["climate"]["is_on"] is True
+    assert fake_controller_class.commands == [
+        (CLIMATE_CONTROL_PATH, {"command": "start", "temperature": {"value": 22.0, "unit": "C"}})
+    ]
+
+
+async def test_start_climate_with_explicit_temperature(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    result = await _call(
+        command_server, "toyota_start_climate", {"confirm": True, "temperature_celsius": 24.5}
+    )
+    assert not result.is_error
+    assert fake_controller_class.commands[0][1]["temperature"] == {"value": 24.5, "unit": "C"}
+
+
+async def test_start_climate_rejects_invalid_temperature(command_server: MCPServer) -> None:
+    result = await _call(
+        command_server, "toyota_start_climate", {"confirm": True, "temperature_celsius": 24.3}
+    )
+    assert result.is_error
+
+
+async def test_stop_climate_preview_then_verified(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    preview = await _call(command_server, "toyota_stop_climate")
+    assert preview.structured_content["status"] == "needs_confirmation"
+    assert fake_controller_class.commands == []
+    result = await _call(command_server, "toyota_stop_climate", {"confirm": True})
+    assert result.structured_content["status"] == "verified"
+    assert result.structured_content["climate"]["is_on"] is False
+    assert fake_controller_class.commands == [(CLIMATE_CONTROL_PATH, {"command": "stop"})]
 
 
 async def test_get_status(server: MCPServer) -> None:
