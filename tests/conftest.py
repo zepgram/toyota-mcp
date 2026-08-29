@@ -30,7 +30,7 @@ ROUTES = {
     "/v1/vehicle/climate-status": "climate_status.json",
 }
 
-LOLA_VIN = "JTDZARBE0RJ000042"
+TINO_VIN = "JTDZARBE0RJ000042"
 BAN_LABEL = "12 Rue de l'Exemple 31000 Toulouse"
 FUEL_RECORDS = [
     {

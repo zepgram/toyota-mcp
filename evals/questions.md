@@ -9,7 +9,7 @@ current state.
 | # | Question (FR / EN) | Expected tool | Fields used | Verification |
 |---|---|---|---|---|
 | 1 | Il reste combien d'autonomie ? / How much range is left? | `toyota_get_energy` | `total_range`, `fuel_level_percent` | App home screen range |
-| 2 | Elle est où, Lola ? / Where is the car? | `toyota_get_location` | `latitude`, `longitude`, `google_maps_url`, `freshness.vehicle_reported_at` | App map pin |
+| 2 | Elle est où, Tino ? / Where is the car? | `toyota_get_location` | `latitude`, `longitude`, `google_maps_url`, `freshness.vehicle_reported_at` | App map pin |
 | 3 | La voiture est verrouillée ? / Is the car locked? | `toyota_get_status` | `all_locked`, `freshness.vehicle_reported_at` | App vehicle status |
 | 4 | Une fenêtre est restée ouverte ? / Any window left open? | `toyota_get_status` | `windows.*` | App vehicle status |
 | 5 | Combien de km au compteur ? / What's the odometer? | `toyota_get_odometer` | `odometer` | App odometer |
@@ -21,7 +21,7 @@ current state.
 
 Expected failure behaviors (also part of the acceptance bar):
 
-- Battery question on Lola (full hybrid) → the agent explains "not applicable
+- Battery question on Tino (full hybrid) → the agent explains "not applicable
   to this powertrain", it does **not** invent a battery percentage.
 - Toyota API down → the agent serves the last snapshot and says how old it is.
 - Wrong credentials → the agent relays the sign-in failure with the doctor hint,

@@ -284,7 +284,7 @@ async def test_get_vehicle_info(server: MCPServer) -> None:
     result = await _call(server, "toyota_get_vehicle_info")
     assert not result.is_error
     content = result.structured_content
-    assert content["alias"] == "Lola"
+    assert content["alias"] == "Tino"
     assert content["vin_suffix"] == "0042"
     assert content["model"] == "Corolla"
     assert content["model_year"] == "2020"
