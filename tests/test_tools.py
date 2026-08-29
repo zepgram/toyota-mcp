@@ -16,7 +16,6 @@ from tests.conftest import (
     CLIMATE_STATUS_PATH,
     COMMAND_PATH,
     ELECTRIC_COMMAND_PATH,
-    SAMPLE_VIN,
     STATUS_PATH,
     FakeControllerBase,
     make_plug_in_hybrid,
@@ -27,13 +26,8 @@ from toyota_mcp.models import FULL_HYBRID_BATTERY_NOTE
 from toyota_mcp.opendata import OpenData
 from toyota_mcp.places import Places
 from toyota_mcp.server import create_server
-from toyota_mcp.session import Session
 
-SETUP_TOOLS = {
-    "toyota_sign_in",
-    "toyota_complete_sign_in",
-    "toyota_select_vehicle",
-}
+SETUP_TOOLS = {"toyota_select_vehicle"}
 EXPECTED_TOOLS = {
     "toyota_list_vehicles",
     "toyota_get_vehicle_info",
@@ -103,9 +97,7 @@ async def test_tools_list_contract(server: MCPServer) -> None:
         assert tool.annotations is not None
         assert tool.annotations.read_only_hint is (tool.name in EXPECTED_TOOLS)
         # the sign-in tools reach Toyota's identity provider, not just the vehicle API
-        assert tool.annotations.open_world_hint is (
-            tool.name in {"toyota_sign_in", "toyota_complete_sign_in"}
-        )
+        assert tool.annotations.open_world_hint is False
         assert tool.output_schema is not None
         assert tool.description
 
@@ -688,50 +680,6 @@ async def test_structured_and_text_content_both_present(server: MCPServer) -> No
     assert result.content[0].type == "text"
 
 
-async def test_a_fresh_server_tells_the_model_how_to_connect(
-    gateway: VehicleGateway,
-) -> None:
-    server = create_server(gateway)
-    result = await _call(server, "toyota_sign_in")
-    assert not result.is_error
-    content = result.structured_content
-    assert content["sign_in_url"].lower().startswith("https://b2c-login.toyota-europe.com")
-    assert content["next_tool"] == "toyota_complete_sign_in"
-    assert "com.toyota.oneapp" in content["instructions"]
-
-
-async def test_completing_the_sign_in_saves_the_session_and_lists_the_vehicles(
-    gateway: VehicleGateway, monkeypatch: pytest.MonkeyPatch, isolated_session: Path
-) -> None:
-    path = isolated_session
-    monkeypatch.setattr(
-        "toyota_mcp.tools.account.exchange",
-        lambda code: _session("driver@example.com", "refresh-value"),
-    )
-    result = await _call(
-        create_server(gateway),
-        "toyota_complete_sign_in",
-        {"redirect": "com.toyota.oneapp:/oauth2Callback?code=ABC"},
-    )
-    assert not result.is_error
-    content = result.structured_content
-    assert content["account"] == "driver@example.com"
-    assert [vehicle["name"] for vehicle in content["vehicles"]] == ["Corolla"]
-    assert content["vehicles"][0]["powertrain"] == "full_hybrid"
-    assert "Every tool acts on this vehicle" in content["note"]
-    assert json.loads(path.read_text())["vin"] == SAMPLE_VIN
-
-
-async def test_a_bad_redirect_is_explained_rather_than_swallowed(
-    gateway: VehicleGateway,
-) -> None:
-    result = await _call(
-        create_server(gateway), "toyota_complete_sign_in", {"redirect": "https://example.com/nope"}
-    )
-    assert result.is_error
-    assert "copy the whole address" in result.content[0].text
-
-
 async def test_listing_and_selecting_a_vehicle_persists_the_choice(
     gateway: VehicleGateway,
     fake_controller_class: type[FakeControllerBase],
@@ -770,7 +718,3 @@ async def test_selecting_an_unknown_vehicle_lists_what_exists(
     assert result.is_error
     assert "No vehicle matches" in result.content[0].text
     assert "Corolla" in result.content[0].text
-
-
-async def _session(username: str, refresh_token: str) -> Session:
-    return Session(username=username, refresh_token=refresh_token)

@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The package version is the git tag:
 tagging `vX.Y.Z` publishes `X.Y.Z` to PyPI and creates the GitHub release.
 
+## [0.3.1] — 2026-08-29
+
+### Fixed
+- The sign-in asks for the MyToyota credentials instead of sending the owner
+  through Toyota's web login: that login ends on a mobile deep link a browser
+  cannot follow — a phone opens the MyToyota app instead of showing the address
+  to copy — which left the connection hanging. The credentials are posted to
+  Toyota and never written down.
+- A wrong password could be accepted whenever that account had already signed in
+  in the same process: pytoyoda caches tokens per username on the class, and the
+  sign-in reused one instead of authenticating.
+
 ## [0.3.0] — 2026-08-29
 
 ### Added

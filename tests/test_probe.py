@@ -121,7 +121,7 @@ def test_no_credentials_and_no_session_says_how_to_sign_in(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("toyota_mcp.probe.SessionStore", lambda: _EmptyStore())
     assert probe.run(["headlight-on"]) == EXIT_CONFIG
-    assert "toyota_sign_in" in capsys.readouterr().out
+    assert "toyota-mcp login" in capsys.readouterr().out
 
 
 class _EmptyStore:

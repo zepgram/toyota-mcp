@@ -113,14 +113,20 @@ toyota-mcp --http https://toyota.example.com
 Nothing else to configure — **connecting is signing in to Toyota**:
 
 1. Paste `https://toyota.example.com/mcp` into your client and press Connect.
-2. The client registers itself and sends you to this server's page.
-3. You sign in on **Toyota's own page**, paste back the address it redirects to,
-   and pick which vehicle to use when the account has several.
-4. The client gets its token; the server keeps the Toyota refresh token.
+2. The client registers itself and sends you to this server's sign-in page.
+3. Enter the MyToyota email and password, then pick which vehicle to use when
+   the account has several.
+4. The client gets its token; the server keeps only Toyota's refresh token.
 
 Signing in to the Toyota account *is* the proof that you own the deployment —
 there is no shared code and no user database. A server already connected to one
 account refuses a sign-in with a different one.
+
+Toyota's own web login ends on a mobile deep link (`com.toyota.oneapp:/…`) that
+a browser cannot follow — on a phone it opens the MyToyota app instead — so the
+credentials are posted to Toyota by the server you run. They are never written
+down: only the refresh token Toyota returns is kept. Accounts with two-factor
+authentication cannot be used, as Toyota's vehicle API does not support them.
 
 Run it on a machine of yours (a home server, a Raspberry Pi), behind a
 TLS-terminating proxy: the server refuses a non-`https://` public URL other
@@ -144,27 +150,24 @@ A container has no credential store, so the session and the grants live in
 ## Authentication
 
 Nothing has to be configured before the first use. A server with no account
-connected still starts, and says what to do: over HTTP the Connect flow signs
-you in, and on stdio the tools `toyota_sign_in` → `toyota_complete_sign_in` →
-`toyota_select_vehicle` do the same from the conversation. `toyota-mcp login`
-remains for a terminal.
+connected still starts and says what to do: over HTTP the Connect flow signs you
+in, otherwise `toyota-mcp login` does. `toyota_list_vehicles` and
+`toyota_select_vehicle` then choose the car from the conversation.
 
 Toyota has no third-party API programme: there is no developer portal, no
 per-application token, and the mobile app signs in with your account password.
 This server therefore offers two ways in, and prefers the one where it never
 holds that password.
 
-**Browser sign-in (recommended).** `toyota-mcp login` sends you to Toyota's own
-page, takes the authorization code back, and keeps only the **refresh token**,
-in your operating system's credential store (Keychain, Windows Credential
-Locker, Secret Service). Nothing is written to any configuration file, and
-accounts with MFA should work because the second factor happens in the browser
-(untested — reports welcome).
+**`toyota-mcp login`.** Asks for the MyToyota email and password, signs in to
+Toyota, and keeps only the **refresh token** — in your operating system's
+credential store (Keychain, Windows Credential Locker, Secret Service), or in a
+file when there is none. The password is never written down, and never lands in
+an MCP host's configuration file.
 
 **Password in the environment.** `TOYOTA_USERNAME` and `TOYOTA_PASSWORD` still
-work for headless setups, but most MCP hosts store their `env` block as
-plain text on disk, so prefer the browser sign-in on a workstation. Accounts
-with MFA cannot use this path.
+work for unattended setups, but most MCP hosts store their `env` block as plain
+text on disk, so prefer `toyota-mcp login`.
 
 ## Configuration
 
@@ -204,7 +207,6 @@ unless the server runs with `--read-only`.
 
 | Tool | Example question | Key fields |
 |---|---|---|
-| `toyota_sign_in` / `toyota_complete_sign_in` | *Connect my Toyota account* | the sign-in link, then the session — no password reaches the server |
 | `toyota_list_vehicles` / `toyota_select_vehicle` | *Which cars? Use the Yaris.* | every vehicle on the account, and which one the tools act on |
 | `toyota_get_vehicle_info` | *What car is this? Is the subscription active?* | model, year, plate, colour, first use, subscriptions, declared remote capabilities |
 | `toyota_get_energy` | *How much range is left?* | fuel %, range (km/mi), battery or an explicit "not applicable" note |
