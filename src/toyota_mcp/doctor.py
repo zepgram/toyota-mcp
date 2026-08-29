@@ -176,9 +176,10 @@ def _print_tool_table(vehicle: Vehicle[Any], settings: Settings) -> None:
         ),
         ("toyota_refresh_data", True, ""),
         (
-            "toyota_lock_doors / unlock_doors",
+            "toyota_lock_doors / unlock_doors / lock_trunk / unlock_trunk / find_car / "
+            "sound_horn / close_windows / wake_vehicle",
             settings.remote_commands,
-            "set TOYOTA_REMOTE_COMMANDS=true (opt-in)",
+            "set TOYOTA_REMOTE_COMMANDS=true (opt-in; the car may reject some)",
         ),
         (
             "toyota_start_climate / stop_climate",

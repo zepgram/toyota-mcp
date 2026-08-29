@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import re
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
@@ -144,15 +145,41 @@ class StatusExtras(BaseModel):
     overall_warning_counts: int | None = Field(default=None, alias="overallWarningCounts")
     lights: _RawLights | None = None
     rear_seat_reminder: _RawRearSeatReminder | None = Field(default=None, alias="rearSeatReminder")
+    reported_at: datetime | None = Field(
+        default=None, description="Newest lastUpdateTimestamp anywhere in the status payload."
+    )
 
     @classmethod
     def from_payload(cls, payload: object) -> StatusExtras:
         if not isinstance(payload, dict):
             return cls()
         try:
-            return cls.model_validate(payload)
+            extras = cls.model_validate(payload)
         except ValidationError:
-            return cls()
+            extras = cls()
+        extras.reported_at = _latest_timestamp(payload)
+        return extras
+
+    def is_newer_than(self, other: StatusExtras) -> bool:
+        return self.reported_at is not None and (
+            other.reported_at is None or self.reported_at > other.reported_at
+        )
+
+
+def _latest_timestamp(node: object) -> datetime | None:
+    found: list[datetime] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "lastUpdateTimestamp" and isinstance(value, str):
+                with contextlib.suppress(ValueError):
+                    found.append(datetime.fromisoformat(value))
+            else:
+                nested = _latest_timestamp(value)
+                if nested is not None:
+                    found.append(nested)
+    elif isinstance(node, list):
+        found.extend(stamp for item in node if (stamp := _latest_timestamp(item)) is not None)
+    return max(found, default=None)
 
 
 class LightReport(BaseModel):
@@ -419,6 +446,9 @@ class LocationReport(BaseModel):
     latitude: float
     longitude: float
     place_label: str | None = Field(default=None, description="Toyota's place name, if any.")
+    place: str | None = Field(
+        default=None, description="Named place from TOYOTA_PLACES within 200 m, e.g. 'home'."
+    )
     address: str | None = Field(
         default=None, description="Postal address; requires TOYOTA_OPEN_DATA (osm or fr)."
     )
@@ -433,11 +463,13 @@ class LocationReport(BaseModel):
         location: Location,
         freshness: Freshness,
         address: str | None = None,
+        place: str | None = None,
     ) -> LocationReport:
         return cls(
             latitude=latitude,
             longitude=longitude,
             place_label=location.state,
+            place=place,
             address=address,
             google_maps_url=f"https://www.google.com/maps?q={latitude},{longitude}",
             freshness=freshness.with_vehicle_time(location.timestamp, LOCATION_NOTE),
@@ -447,6 +479,7 @@ class LocationReport(BaseModel):
 class TripPlace(BaseModel):
     latitude: float | None
     longitude: float | None
+    place: str | None = Field(default=None, description="Named place from TOYOTA_PLACES.")
     address: str | None = Field(
         default=None, description="Postal address; requires TOYOTA_OPEN_DATA (osm or fr)."
     )
@@ -568,7 +601,13 @@ class TripsReport(BaseModel):
         )
 
 
+CalendarPeriod = Literal["today", "this_week", "this_month", "this_year"]
+
+
 class TripSummaryReport(BaseModel):
+    period: CalendarPeriod | None = Field(
+        default=None, description="Set when the window is a calendar period (as in the app)."
+    )
     window_from: date
     window_to: date
     total_distance: Quantity
@@ -706,8 +745,12 @@ class ServiceRecord(BaseModel):
 class HealthReport(BaseModel):
     warning_lights: list[str]
     warning_lights_caveat: str
+    engine_oil_indicators: list[str] = Field(
+        description="Raw oil-quantity indicators reported by the car; empty means nothing flagged."
+    )
     notifications: list[NotificationItem] = Field(description="Latest 10, newest first.")
     last_service: ServiceRecord | None
+    service_history: list[ServiceRecord] = Field(description="All recorded services, newest first.")
     service_note: str
     freshness: Freshness
 
@@ -723,6 +766,28 @@ def telemetry_reported_at(dashboard: Dashboard[Any]) -> datetime | None:
     telemetry = getattr(dashboard, "_telemetry", None)
     reported_at = getattr(telemetry, "timestamp", None)
     return reported_at if isinstance(reported_at, datetime) else None
+
+
+def trunk_lock_state(lock_status: LockStatus) -> LockState:
+    doors = lock_status.doors
+    return _lock_state(doors.trunk.locked if doors and doors.trunk else None)
+
+
+def windows_state(lock_status: LockStatus) -> OpenState:
+    windows = lock_status.windows
+    states = [
+        _open_state(window.closed if window else None)
+        for window in (
+            windows.driver_seat if windows else None,
+            windows.passenger_seat if windows else None,
+            windows.driver_rear_seat if windows else None,
+            windows.passenger_rear_seat if windows else None,
+        )
+    ]
+    known = [state for state in states if state != "unknown"]
+    if not known:
+        return "unknown"
+    return "closed" if all(state == "closed" for state in known) else "open"
 
 
 def lock_state_of(lock_status: LockStatus, doors_only: bool = False) -> LockState:

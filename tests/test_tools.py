@@ -19,6 +19,7 @@ from toyota_mcp import errors
 from toyota_mcp.gateway import VehicleGateway
 from toyota_mcp.models import FULL_HYBRID_BATTERY_NOTE
 from toyota_mcp.opendata import OpenData
+from toyota_mcp.places import Places
 from toyota_mcp.server import create_server
 
 EXPECTED_TOOLS = {
@@ -39,7 +40,7 @@ EXPECTED_TOOLS = {
 
 @pytest.fixture
 def server(gateway: VehicleGateway, opendata: OpenData) -> MCPServer:
-    return create_server(gateway, opendata)
+    return create_server(gateway, opendata, places=Places.parse("home=52.1695,0.1357"))
 
 
 @pytest.fixture
@@ -55,9 +56,16 @@ def command_server(command_gateway: VehicleGateway) -> MCPServer:
 COMMAND_TOOLS = {
     "toyota_lock_doors",
     "toyota_unlock_doors",
+    "toyota_lock_trunk",
+    "toyota_unlock_trunk",
+    "toyota_find_car",
+    "toyota_sound_horn",
+    "toyota_close_windows",
     "toyota_start_climate",
     "toyota_stop_climate",
+    "toyota_wake_vehicle",
 }
+DESTRUCTIVE_TOOLS = {"toyota_unlock_doors", "toyota_unlock_trunk", "toyota_start_climate"}
 
 
 async def _call(server: MCPServer, tool: str, arguments: dict[str, Any] | None = None) -> Any:
@@ -90,9 +98,8 @@ async def test_commands_are_opt_in(server: MCPServer, command_server: MCPServer)
     for name, tool in command_tools.items():
         assert tool.annotations is not None
         assert tool.annotations.read_only_hint is False
-        assert tool.annotations.destructive_hint is (
-            name in {"toyota_unlock_doors", "toyota_start_climate"}
-        )
+        assert tool.annotations.destructive_hint is (name in DESTRUCTIVE_TOOLS)
+        assert tool.description
 
 
 async def test_lock_preview_sends_nothing(
@@ -122,6 +129,67 @@ async def test_unlock_verified_from_state_change(
     assert "wait" in locked.content[0].text
 
 
+async def test_unlock_trunk_verified_without_touching_the_doors(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    result = await _call(command_server, "toyota_unlock_trunk", {"confirm": True})
+    assert not result.is_error
+    content = result.structured_content
+    assert content["status"] == "verified"
+    assert content["doors"]["doors"]["trunk"]["lock"] == "unlocked"
+    assert content["doors"]["doors"]["driver"]["lock"] == "locked"
+    assert fake_controller_class.commands == [(COMMAND_PATH, {"command": "trunk-unlock"})]
+
+
+async def test_find_car_is_verified_by_a_newer_report(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    result = await _call(command_server, "toyota_find_car", {"confirm": True})
+    content = result.structured_content
+    assert content["status"] == "verified"
+    assert "hazard lights flashed" in content["detail"]
+    assert fake_controller_class.commands == [(COMMAND_PATH, {"command": "hazard-on"})]
+
+
+async def test_find_car_without_a_report_is_accepted(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    fake_controller_class.commands_take_effect = False
+    result = await _call(command_server, "toyota_find_car", {"confirm": True})
+    assert result.structured_content["status"] == "accepted"
+
+
+async def test_unsupported_command_is_a_clear_error_and_nothing_polls(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    fake_controller_class.unsupported_commands = {"power-window-close"}
+    reads_before = fake_controller_class.calls.count(STATUS_PATH)
+    result = await _call(command_server, "toyota_close_windows", {"confirm": True})
+    assert result.is_error
+    assert "does not support that remote command" in result.content[0].text
+    assert fake_controller_class.commands == []
+    assert fake_controller_class.calls.count(STATUS_PATH) == reads_before + 1
+
+
+async def test_close_windows_already_closed_verified_by_newer_report(
+    command_server: MCPServer,
+) -> None:
+    result = await _call(command_server, "toyota_close_windows", {"confirm": True})
+    assert result.structured_content["status"] == "verified"
+
+
+async def test_wake_vehicle_asks_the_car_to_report(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    result = await _call(command_server, "toyota_wake_vehicle")
+    assert not result.is_error
+    content = result.structured_content
+    assert content["command"] == "wake"
+    assert content["status"] == "accepted"
+    assert "/v1/remote/status" in fake_controller_class.calls
+    assert "/v1/remote/refresh-climate-status" in fake_controller_class.calls
+
+
 async def test_lock_already_locked_needs_a_newer_report(
     command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
 ) -> None:
@@ -130,7 +198,7 @@ async def test_lock_already_locked_needs_a_newer_report(
     assert not result.is_error
     content = result.structured_content
     assert content["status"] == "accepted"
-    assert "already reported locked" in content["detail"]
+    assert "already reported 'doors locked'" in content["detail"]
     assert "toyota_get_status" in content["detail"]
 
 
@@ -353,6 +421,7 @@ async def test_get_location(server: MCPServer) -> None:
     assert content["longitude"] == 0.135654
     assert content["google_maps_url"] == "https://www.google.com/maps?q=52.169516,0.135654"
     assert content["address"] == BAN_LABEL
+    assert content["place"] == "home"
     assert "parks" in content["freshness"]["note"]
 
 
@@ -420,6 +489,16 @@ async def test_get_trips(server: MCPServer) -> None:
     assert "12 months" in content["retention_note"]
 
 
+async def test_briefing_prompt_lists_the_tools_to_call(server: MCPServer) -> None:
+    async with Client(server) as client:
+        prompts = (await client.list_prompts()).prompts
+        rendered = await client.get_prompt("vehicle_briefing", {"language": "French"})
+    assert [prompt.name for prompt in prompts] == ["vehicle_briefing"]
+    text = rendered.messages[0].content.text  # type: ignore[union-attr]
+    assert "French" in text
+    assert "toyota_get_energy" in text and "toyota_find_fuel_stations" in text
+
+
 async def test_get_trips_window_counts_calendar_days_inclusive(server: MCPServer) -> None:
     result = await _call(server, "toyota_get_trips", {"days": 1})
     assert not result.is_error
@@ -432,6 +511,15 @@ async def test_get_trips_rejects_out_of_range_days(server: MCPServer) -> None:
     assert result.is_error
     result = await _call(server, "toyota_get_trips", {"days": 400})
     assert result.is_error
+
+
+async def test_get_trip_summary_calendar_period(server: MCPServer) -> None:
+    result = await _call(server, "toyota_get_trip_summary", {"period": "this_month"})
+    assert not result.is_error
+    content = result.structured_content
+    assert content["period"] == "this_month"
+    assert content["total_distance"]["unit"] == "km"
+    assert content["window_from"] <= content["window_to"]
 
 
 async def test_get_trip_summary(server: MCPServer) -> None:
@@ -449,8 +537,12 @@ async def test_get_health(server: MCPServer) -> None:
     assert not result.is_error
     content = result.structured_content
     assert content["warning_lights"] == []
+    assert content["engine_oil_indicators"] == []
     assert len(content["notifications"]) == 10
     assert content["last_service"] is not None
+    assert len(content["service_history"]) >= 2
+    assert content["service_history"][0] == content["last_service"]
+    assert content["service_history"][0]["date"] >= content["service_history"][1]["date"]
     assert "HISTORY" in content["service_note"]
 
 

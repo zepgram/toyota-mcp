@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated
 
@@ -7,7 +10,6 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.types import ToolAnnotations
 from pydantic import Field
-from pytoyoda.models.endpoints.command import CommandType
 
 from toyota_mcp.gateway import (
     AppContext,
@@ -21,9 +23,10 @@ from toyota_mcp.models import (
     ClimateReport,
     CommandReport,
     Freshness,
-    LockState,
     StatusReport,
     lock_state_of,
+    trunk_lock_state,
+    windows_state,
 )
 
 REVERSIBLE = ToolAnnotations(
@@ -48,30 +51,145 @@ UNVERIFIED_HINT = (
 )
 
 
+@dataclass(frozen=True)
+class CommandSpec:
+    """One remote command: a spec plus its evidence row in docs/architecture.md is a tool."""
+
+    tool: str
+    title: str
+    command: str
+    destructive: bool
+    effect: str
+    outcome: str
+    description: str
+    state: Callable[[StatusBundle], str] | None = None
+    expected: str | None = None
+
+    def already(self, before: StatusBundle) -> bool:
+        return self.state is not None and self.state(before) == self.expected
+
+    def verified(self, before: StatusBundle, after: StatusBundle) -> bool:
+        newer = after.extras.is_newer_than(before.extras)
+        if self.state is None:
+            return newer
+        return self.state(after) == self.expected and (not self.already(before) or newer)
+
+
+def _doors(bundle: StatusBundle) -> str:
+    return lock_state_of(bundle.lock_status, doors_only=True)
+
+
+def _trunk(bundle: StatusBundle) -> str:
+    return trunk_lock_state(bundle.lock_status)
+
+
+def _windows(bundle: StatusBundle) -> str:
+    return windows_state(bundle.lock_status)
+
+
+STATUS_COMMANDS: tuple[CommandSpec, ...] = (
+    CommandSpec(
+        tool="toyota_lock_doors",
+        title="Lock the doors",
+        command="door-lock",
+        destructive=False,
+        effect="lock the doors",
+        outcome="doors locked",
+        description=(
+            "Lock the doors, then verify against the state the car reports.\n\n"
+            "Only when the user explicitly asked to lock the car. Call with confirm=false "
+            "first when in doubt; the report says whether the car confirmed the new state."
+        ),
+        state=_doors,
+        expected="locked",
+    ),
+    CommandSpec(
+        tool="toyota_unlock_doors",
+        title="Unlock the doors",
+        command="door-unlock",
+        destructive=True,
+        effect="unlock the doors",
+        outcome="doors unlocked",
+        description=(
+            "Unlock the doors, then verify against the state the car reports.\n\n"
+            "Security-sensitive: only when the user explicitly asked to unlock the car in "
+            "this conversation, never on your own initiative. Preview with confirm=false "
+            "unless the user already confirmed."
+        ),
+        state=_doors,
+        expected="unlocked",
+    ),
+    CommandSpec(
+        tool="toyota_lock_trunk",
+        title="Lock the trunk",
+        command="trunk-lock",
+        destructive=False,
+        effect="lock the trunk",
+        outcome="trunk locked",
+        description="Lock the trunk only, then verify against the state the car reports.",
+        state=_trunk,
+        expected="locked",
+    ),
+    CommandSpec(
+        tool="toyota_unlock_trunk",
+        title="Unlock the trunk",
+        command="trunk-unlock",
+        destructive=True,
+        effect="unlock the trunk",
+        outcome="trunk unlocked",
+        description=(
+            "Unlock the trunk only (doors stay locked), then verify against the state the "
+            "car reports. Only on the user's explicit request; preview with confirm=false "
+            "unless the user already confirmed."
+        ),
+        state=_trunk,
+        expected="unlocked",
+    ),
+    CommandSpec(
+        tool="toyota_find_car",
+        title="Flash the hazard lights",
+        command="hazard-on",
+        destructive=False,
+        effect="flash the hazard lights for a few seconds",
+        outcome="hazard lights flashed",
+        description=(
+            "Flash the hazard lights briefly so the user can spot the car — silent. "
+            "Verified by the car reporting back."
+        ),
+    ),
+    CommandSpec(
+        tool="toyota_sound_horn",
+        title="Sound the horn briefly",
+        command="buzzer-warning",
+        destructive=False,
+        effect="sound a short horn signal",
+        outcome="horn sounded",
+        description=(
+            "Sound a short horn signal to locate the car — audible to everyone around it; "
+            "prefer toyota_find_car unless the user asked for sound. Verified by the car "
+            "reporting back."
+        ),
+    ),
+    CommandSpec(
+        tool="toyota_close_windows",
+        title="Close the windows",
+        command="power-window-close",
+        destructive=False,
+        effect="close all windows",
+        outcome="windows closed",
+        description=(
+            "Close all power windows, then verify against the state the car reports. "
+            "Not every model supports it; Toyota answers 'vehicle not supported' when not."
+        ),
+        state=_windows,
+        expected="closed",
+    ),
+)
+
+
 def register(mcp: MCPServer) -> None:
-    @mcp.tool(title="Lock the doors", annotations=REVERSIBLE)
-    async def toyota_lock_doors(
-        ctx: Context[AppContext], confirm: Confirm = False
-    ) -> CommandReport:
-        """Lock the doors, then verify against the state the car reports.
-
-        Only when the user explicitly asked to lock the car. Call with
-        confirm=false first when in doubt; the report says whether the car
-        confirmed the new state.
-        """
-        return await _door_command(ctx, CommandType.DOOR_LOCK, "locked", confirm)
-
-    @mcp.tool(title="Unlock the doors", annotations=DESTRUCTIVE)
-    async def toyota_unlock_doors(
-        ctx: Context[AppContext], confirm: Confirm = False
-    ) -> CommandReport:
-        """Unlock the doors, then verify against the state the car reports.
-
-        Security-sensitive: only when the user explicitly asked to unlock the
-        car in this conversation, never on your own initiative. Preview with
-        confirm=false unless the user already confirmed.
-        """
-        return await _door_command(ctx, CommandType.DOOR_UNLOCK, "unlocked", confirm)
+    for spec in STATUS_COMMANDS:
+        _register_status_command(mcp, spec)
 
     @mcp.tool(title="Start remote climate", annotations=DESTRUCTIVE)
     async def toyota_start_climate(
@@ -124,30 +242,77 @@ def register(mcp: MCPServer) -> None:
             send=gateway.stop_climate,
         )
 
+    @mcp.tool(title="Wake the car and re-read its state", annotations=REVERSIBLE)
+    async def toyota_wake_vehicle(ctx: Context[AppContext]) -> CommandReport:
+        """Ask the car to report its current state right now, then re-read doors and climate.
 
-async def _door_command(
-    ctx: Context[AppContext], command: CommandType, expected: LockState, confirm: bool
+        The passive reads only see what the car pushed when it parked; this
+        sends the same wake request the MyToyota app uses. It costs the car a
+        little 12 V battery and cellular time — use it when the user needs the
+        state as of now, not routinely.
+        """
+        gateway = ctx.request_context.lifespan_context.gateway
+        started = time.monotonic()
+        _, after, freshness, reported = await gateway.wake()
+        elapsed = round(time.monotonic() - started, 1)
+        doors = (
+            StatusReport.from_lock_status(after.lock_status, after.extras, freshness)
+            if after is not None and freshness is not None
+            else None
+        )
+        detail = (
+            "The car reported its current state."
+            if reported
+            else f"The car has not answered the wake request within {int(elapsed)}s; "
+            "the last known state is shown."
+        )
+        return CommandReport(
+            command="wake",
+            status="verified" if reported else "accepted",
+            detail=detail,
+            doors=doors,
+            elapsed_seconds=elapsed,
+        )
+
+
+def _register_status_command(mcp: MCPServer, spec: CommandSpec) -> None:
+    async def tool(ctx: Context[AppContext], confirm: Confirm = False) -> CommandReport:
+        return await _status_command(ctx.request_context.lifespan_context.gateway, spec, confirm)
+
+    tool.__name__ = spec.tool
+    tool.__doc__ = spec.description
+    mcp.tool(
+        name=spec.tool,
+        title=spec.title,
+        annotations=DESTRUCTIVE if spec.destructive else REVERSIBLE,
+    )(tool)
+
+
+async def _status_command(
+    gateway: VehicleGateway, spec: CommandSpec, confirm: bool
 ) -> CommandReport:
-    gateway = ctx.request_context.lifespan_context.gateway
-    name = str(command.value)
     before, before_freshness = await gateway.status()
     before_report = StatusReport.from_lock_status(
         before.lock_status, before.extras, before_freshness
     )
     if not confirm:
         return CommandReport(
-            command=name,
+            command=spec.command,
             status="needs_confirmation",
-            detail=f"Would send '{name}' (doors currently {before_report.all_locked}). "
+            detail=f"Would {spec.effect} (doors currently {before_report.all_locked}). "
             f"{CONFIRMATION_NOTE}",
             doors=before_report,
         )
     try:
-        await gateway.send_door_command(command)
+        await gateway.send_command(spec.command)
     except CommandRejected as exc:
-        return CommandReport(command=name, status="failed", detail=str(exc), doors=before_report)
+        return CommandReport(
+            command=spec.command, status="failed", detail=str(exc), doors=before_report
+        )
     started = time.monotonic()
-    after, freshness, verified = await gateway.wait_for_status(_doors_changed(before, expected))
+    after, freshness, verified = await gateway.wait_for_status(
+        lambda now: spec.verified(before, now)
+    )
     elapsed = round(time.monotonic() - started, 1)
     doors = (
         StatusReport.from_lock_status(after.lock_status, after.extras, freshness)
@@ -155,33 +320,18 @@ async def _door_command(
         else None
     )
     if verified:
-        detail = f"The car reports its doors {expected}."
+        detail = f"The car confirms: {spec.outcome}."
     else:
         detail = UNVERIFIED_HINT.format(seconds=int(elapsed), read_tool="toyota_get_status")
-        if lock_state_of(before.lock_status, doors_only=True) == expected:
-            detail = f"The doors were already reported {expected} before the command. {detail}"
+        if spec.already(before):
+            detail = f"The car already reported '{spec.outcome}' before the command. {detail}"
     return CommandReport(
-        command=name,
+        command=spec.command,
         status="verified" if verified else "accepted",
         detail=detail,
         doors=doors,
         elapsed_seconds=elapsed,
     )
-
-
-def _doors_changed(before: StatusBundle, expected: LockState) -> Callable[[StatusBundle], bool]:
-    before_state = lock_state_of(before.lock_status, doors_only=True)
-    before_at = before.lock_status.last_updated
-
-    def satisfied(after: StatusBundle) -> bool:
-        if lock_state_of(after.lock_status, doors_only=True) != expected:
-            return False
-        after_at = after.lock_status.last_updated
-        return before_state != expected or (
-            after_at is not None and before_at is not None and after_at > before_at
-        )
-
-    return satisfied
 
 
 async def _climate_command(

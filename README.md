@@ -82,7 +82,8 @@ specific car supports. Exit codes: `0` ok · `2` config · `3` auth ·
 | `TOYOTA_BRAND` | no | `T` | `T` Toyota, `L` Lexus |
 | `TOYOTA_USE_METRIC` | no | `true` | `false` switches to miles/gallons |
 | `TOYOTA_OPEN_DATA` | no | `off` | `osm` adds addresses worldwide (OpenStreetMap); `fr` adds French addresses and fuel prices (see below) |
-| `TOYOTA_REMOTE_COMMANDS` | no | `false` | `true` registers the lock / unlock / climate tools (see below) |
+| `TOYOTA_REMOTE_COMMANDS` | no | `false` | `true` registers the remote command tools (see below) |
+| `TOYOTA_PLACES` | no | — | named places, `home=43.6045,1.4440;work=43.6290,1.3630`: positions within 200 m are labelled |
 
 A local `.env` file works too (see `.env.example`). Credentials never touch disk
 otherwise; tokens live in memory only.
@@ -101,22 +102,30 @@ actuate the vehicle. Remote commands exist but are opt-in — see below.
 | `toyota_get_odometer` | *How many km on the clock?* | odometer with unit |
 | `toyota_get_last_trip` | *What did the last trip consume?* | distance, duration, consumption, EV share, hybrid mode split, start/end places |
 | `toyota_get_trips` | *This week's trips?* | individual trips, newest first (≤ 92 days back) |
-| `toyota_get_trip_summary` | *Average consumption over the last 7 days?* | rolling-window totals, recomputed L/100km, EV distance & time share |
-| `toyota_get_health` | *Any alerts on the car?* | warning lights, notifications, last recorded service |
+| `toyota_get_trip_summary` | *Average consumption over the last 7 days? This month's EV share?* | rolling window or calendar period (`today`, `this_week`, `this_month`, `this_year`), recomputed L/100km, EV distance & time share |
+| `toyota_get_health` | *Any alerts on the car? When was it serviced?* | warning lights, oil indicators, notifications, full service history |
 | `toyota_get_climate` | *Is the pre-heating running? What's the preset?* | remote climate state, target temperature, preset (duration, defrosters, heated seats) |
 | `toyota_find_fuel_stations` | *Cheapest station near the car?* | cheapest stations for a fuel around the car (France, open data) |
 | `toyota_refresh_data` | *I just parked — refresh.* | bounded cloud re-fetch (never wakes the car) |
 
 ## Remote commands (optional)
 
-Set `TOYOTA_REMOTE_COMMANDS=true` to register four write tools:
+Set `TOYOTA_REMOTE_COMMANDS=true` to register the write tools:
 
 | Tool | Effect | Annotation |
 |---|---|---|
-| `toyota_lock_doors` | locks doors and trunk | reversible |
-| `toyota_unlock_doors` | unlocks the doors | **destructive** |
-| `toyota_start_climate` | starts pre-conditioning at the preset (or a given temperature, 15–30 °C by 0.5) — on a hybrid this runs the engine | **destructive** |
+| `toyota_lock_doors` / `toyota_unlock_doors` | locks / unlocks the doors | reversible / **destructive** |
+| `toyota_lock_trunk` / `toyota_unlock_trunk` | locks / unlocks the trunk only | reversible / **destructive** |
+| `toyota_find_car` | flashes the hazard lights briefly (silent) | reversible |
+| `toyota_sound_horn` | short horn signal | reversible |
+| `toyota_close_windows` | closes the power windows (model-dependent) | reversible |
+| `toyota_start_climate` | starts pre-conditioning with the saved preset (or a given temperature, 15–30 °C by 0.5) — on a hybrid this runs the engine | **destructive** |
 | `toyota_stop_climate` | stops pre-conditioning | reversible |
+| `toyota_wake_vehicle` | asks the car to report its state now (costs a little 12 V battery) | reversible |
+
+Not every car accepts every command: Toyota answers "vehicle not supported"
+(or "unknown command") and the tool says so — nothing reaches the car. See
+[docs/architecture.md](docs/architecture.md) for the vocabulary observed so far.
 
 Safety model:
 
@@ -132,8 +141,13 @@ Safety model:
   state or a fresh report; `accepted` means Toyota took the command but no
   change was reported yet — check again in a minute, and `toyota_get_health`
   shows any message Toyota sent about it (e.g. the car was moving).
-- Commands are rate-limited to one every 10 s. Horn, lights and window
-  commands are deliberately not exposed.
+- Commands are rate-limited to one every 10 s.
+
+## Prompt
+
+`vehicle_briefing` (optional `language` argument) asks the model to produce a
+short status briefing — range, doors and lights, position, last trip, alerts,
+cheapest fuel when the tank is low — from the tools above.
 
 ## Addresses and fuel prices (optional)
 
@@ -213,6 +227,12 @@ returning misleading nulls.
 - No tokens or snapshots are persisted to disk.
 - `doctor --dump` output is recursively redacted, but review it manually before
   sharing.
+
+## Contributing
+
+[docs/architecture.md](docs/architecture.md) describes the layers, the contracts
+(freshness, verification, privacy) and what to touch to add a tool, a command or
+a provider. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
 ## Development
 

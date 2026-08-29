@@ -5,7 +5,7 @@ import contextlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any, Literal, TypeVar, cast
 
@@ -20,7 +20,6 @@ from pytoyoda.models.endpoints.climate import (
     SeatOptionsModel,
     V2RemoteClimateControlRequestModel,
 )
-from pytoyoda.models.endpoints.command import CommandType
 from pytoyoda.models.endpoints.common import UnitValueModel
 from pytoyoda.models.location import Location
 from pytoyoda.models.lock_status import LockStatus
@@ -43,8 +42,9 @@ from toyota_mcp.cache import (
     SnapshotCache,
 )
 from toyota_mcp.config import Settings
-from toyota_mcp.models import Freshness, Powertrain, StatusExtras
+from toyota_mcp.models import CalendarPeriod, Freshness, Powertrain, StatusExtras
 from toyota_mcp.opendata import OpenData
+from toyota_mcp.places import Places
 
 T = TypeVar("T")
 
@@ -67,6 +67,8 @@ NO_TELEMETRY_REPORTED = (
 )
 NO_SNAPSHOT_NOTE = "No snapshot is cached — the vehicle reported no data on the last refresh."
 STATUS_PATH = "/v1/vehicle/status"
+HEALTH_PATH = "/v1/vehiclehealth/status"
+COMMAND_PATH = "/v1/global/remote/command"
 NO_CLIMATE_REPORTED = (
     "The vehicle did not report climate data — remote climate may not be supported."
 )
@@ -74,7 +76,7 @@ NO_CLIMATE_PRESET = (
     "The vehicle has no saved climate preset and no temperature was given — "
     "pass temperature_celsius explicitly."
 )
-CLIMATE_ACCEPTED_CODE = "000000"
+ACCEPTED_CODE = "000000"
 
 
 class CommandRejected(Exception):
@@ -84,8 +86,9 @@ class CommandRejected(Exception):
 @dataclass(frozen=True)
 class HealthBundle:
     warning_lights: list[str]
+    engine_oil_indicators: list[str]
     notifications: list[Notification]
-    latest_service: ServiceHistory[Any] | None
+    service_history: list[ServiceHistory[Any]]
     service_history_enabled: bool
 
 
@@ -105,12 +108,20 @@ class ClimateBundle:
 class AppContext:
     gateway: VehicleGateway
     opendata: OpenData | None = None
+    places: Places = field(default_factory=Places)
 
 
-def _capturing(base: type[Controller]) -> tuple[type[Controller], dict[str, Any]]:
+def _capturing(
+    base: type[Controller],
+) -> tuple[type[Controller], dict[str, Any], dict[str, Controller]]:
     raw: dict[str, Any] = {}
+    holder: dict[str, Controller] = {}
 
     class CapturingController(base):  # type: ignore[valid-type,misc]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            holder["controller"] = self
+
         async def request_json(
             self,
             method: str,
@@ -126,7 +137,7 @@ def _capturing(base: type[Controller]) -> tuple[type[Controller], dict[str, Any]
             raw[endpoint.split("?")[0]] = payload
             return payload
 
-    return CapturingController, raw
+    return CapturingController, raw, holder
 
 
 class VehicleGateway:
@@ -141,7 +152,7 @@ class VehicleGateway:
         self._command_poll_interval = command_poll_interval
         self._command_timeout = command_timeout
         self._last_command_at = 0.0
-        capturing_class, self._raw = _capturing(controller_class)
+        capturing_class, self._raw, holder = _capturing(controller_class)
         self._client = MyT(
             username=settings.username,
             password=settings.password.get_secret_value(),
@@ -149,6 +160,7 @@ class VehicleGateway:
             brand=settings.brand,
             controller_class=capturing_class,
         )
+        self._controller = holder["controller"]
         self._cache = SnapshotCache()
         self._lock = asyncio.Lock()
         self._vehicle: Vehicle[Any] | None = None
@@ -185,8 +197,13 @@ class VehicleGateway:
             "health_bundle",
             TTL_HEALTH_BUNDLE,
             ["health_status", "notifications", "service_history"],
-            _extract_health,
+            self._health_bundle,
         )
+
+    async def calendar_summary(
+        self, period: CalendarPeriod
+    ) -> tuple[Summary[Any] | None, Freshness]:
+        return await self._live(lambda vehicle: _CALENDAR_SUMMARIES[period](vehicle))
 
     async def powertrain(self) -> Powertrain:
         async with self._lock:
@@ -242,12 +259,31 @@ class VehicleGateway:
                 Freshness(fetched_at=self._last_refresh_at, age_seconds=0, source="live"),
             )
 
-    async def send_door_command(self, command: CommandType) -> datetime:
+    async def send_command(self, command: str) -> datetime:
+        body = {"command": command}
         return await self._command(
             "status",
-            send=lambda vehicle: vehicle.post_command(command),
+            send=lambda vehicle: self._controller.request_json(
+                "POST", COMMAND_PATH, vin=vehicle.vin, body=body
+            ),
             wake=lambda vehicle: vehicle.refresh_status(),
         )
+
+    async def wake(self) -> tuple[StatusBundle, StatusBundle | None, Freshness | None, bool]:
+        before, _ = await self.status()
+        async with self._lock:
+            self._check_cooldown()
+            vehicle = await self._ensure_vehicle()
+            with contextlib.suppress(Exception):
+                await vehicle.refresh_status()
+            with contextlib.suppress(Exception):
+                await vehicle.refresh_climate_status()
+            for key in ("status", "telemetry", "location", "climate"):
+                self._cache.drop(key)
+        after, freshness, reported = await self.wait_for_status(
+            lambda now: now.extras.is_newer_than(before.extras)
+        )
+        return before, after, freshness, reported
 
     async def start_climate(self, temperature_celsius: float | None) -> datetime:
         async def send(vehicle: Vehicle[Any]) -> object:
@@ -445,6 +481,24 @@ class VehicleGateway:
             self._login_blocked_until = time.monotonic() + LOGIN_COOLDOWN
         return error
 
+    def _health_bundle(self, vehicle: Vehicle[Any]) -> HealthBundle:
+        dashboard = vehicle.dashboard
+        raw_health = (self._raw.get(HEALTH_PATH) or {}).get("payload") or {}
+        history = vehicle.service_history
+        return HealthBundle(
+            warning_lights=[
+                str(light) for light in (dashboard.warning_lights if dashboard else None) or []
+            ],
+            engine_oil_indicators=[
+                str(item) for item in raw_health.get("quantityOfEngOilIcon") or []
+            ],
+            notifications=list(vehicle.notifications or []),
+            service_history=sorted(
+                history or [], key=lambda service: service.service_date or date.min, reverse=True
+            ),
+            service_history_enabled=history is not None,
+        )
+
     def _status_bundle(self, vehicle: Vehicle[Any]) -> StatusBundle:
         if vehicle.lock_status is None:
             raise ToolError(NO_STATUS_REPORTED)
@@ -481,9 +535,23 @@ def vehicle_label(vehicle: Vehicle[Any]) -> str:
     return f"{alias} (…{(vehicle.vin or '????')[-4:]})"
 
 
+_CALENDAR_SUMMARIES: dict[
+    CalendarPeriod, Callable[[Vehicle[Any]], Awaitable[Summary[Any] | None]]
+] = {
+    "today": lambda vehicle: vehicle.get_current_day_summary(),
+    "this_week": lambda vehicle: vehicle.get_current_week_summary(),
+    "this_month": lambda vehicle: vehicle.get_current_month_summary(),
+    "this_year": lambda vehicle: vehicle.get_current_year_summary(),
+}
+
+
 def _rejection(response: object) -> str | None:
-    return_code = getattr(getattr(response, "payload", None), "return_code", None)
-    if return_code is None or return_code == CLIMATE_ACCEPTED_CODE:
+    payload = response.get("payload") if isinstance(response, dict) else None
+    if isinstance(payload, dict):
+        return_code = payload.get("returnCode")
+    else:
+        return_code = getattr(getattr(response, "payload", None), "return_code", None)
+    if return_code is None or return_code == ACCEPTED_CODE:
         return None
     return f"Toyota rejected the command (code {return_code}) — nothing was executed."
 
@@ -554,25 +622,6 @@ def _extract_location(vehicle: Vehicle[Any]) -> Location:
     if location is None or location.latitude is None or location.longitude is None:
         raise ToolError(errors.LOCATION_NEVER_REPORTED)
     return location
-
-
-def _extract_health(vehicle: Vehicle[Any]) -> HealthBundle:
-    dashboard = vehicle.dashboard
-    raw_lights = (dashboard.warning_lights if dashboard else None) or []
-    warning_lights = [str(light) for light in raw_lights]
-    history = vehicle.service_history
-    return HealthBundle(
-        warning_lights=warning_lights,
-        notifications=list(vehicle.notifications or []),
-        latest_service=_latest_service(history),
-        service_history_enabled=history is not None,
-    )
-
-
-def _latest_service(history: list[ServiceHistory[Any]] | None) -> ServiceHistory[Any] | None:
-    if not history:
-        return None
-    return max(history, key=lambda service: service.service_date or date.min)
 
 
 def _freshness(snapshot: Snapshot, source: Literal["live", "cache"]) -> Freshness:

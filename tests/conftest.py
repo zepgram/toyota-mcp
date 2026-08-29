@@ -85,6 +85,10 @@ COMMAND_PATH = "/v1/global/remote/command"
 CLIMATE_CONTROL_PATH = "/v2/remote/climate-control"
 STATUS_PATH = "/v1/vehicle/status"
 CLIMATE_STATUS_PATH = "/v1/vehicle/climate-status"
+UNSUPPORTED = (
+    'Request Failed. 400, {"status":{"messages":[{"responseCode":"CTP-REMOTE-40041",'
+    '"description":"Vehicle not supported"}]}}'
+)
 ACCEPTED = {
     "status": {"messages": [{"responseCode": "CTP-GENERIC-20001", "description": "Success"}]}
 }
@@ -98,6 +102,7 @@ class FakeControllerBase(Controller):
     effect_delay: ClassVar[int]
     fail_reads_after_command: ClassVar[int]
     climate_return_code: ClassVar[str]
+    unsupported_commands: ClassVar[set[str]]
     pending: ClassVar[tuple[str, dict[str, Any], int] | None]
     failure: ClassVar[Exception | None]
     login_failure: ClassVar[Exception | None]
@@ -127,13 +132,16 @@ class FakeControllerBase(Controller):
         if cls.failure is not None:
             raise cls.failure
         if method == "POST":
+            if path == COMMAND_PATH and (body or {}).get("command") in cls.unsupported_commands:
+                raise ToyotaApiError(UNSUPPORTED)
             if path in (COMMAND_PATH, CLIMATE_CONTROL_PATH):
                 cls.commands.append((path, body or {}))
                 if cls.commands_take_effect:
                     cls.pending = (path, body or {}, cls.effect_delay)
             response: dict[str, Any] = copy.deepcopy(ACCEPTED)
-            if path == CLIMATE_CONTROL_PATH:
-                response["payload"] = {"returnCode": cls.climate_return_code}
+            response["payload"] = {
+                "returnCode": cls.climate_return_code if path == CLIMATE_CONTROL_PATH else "000000"
+            }
             return response
         if cls.commands and cls.fail_reads_after_command > 0:
             cls.fail_reads_after_command -= 1
@@ -149,17 +157,28 @@ class FakeControllerBase(Controller):
 
 
 def _apply_command(responses: dict[str, Any], path: str, body: dict[str, Any]) -> None:
-    if path == COMMAND_PATH and body.get("command") in ("door-lock", "door-unlock"):
-        state = "locked" if body["command"] == "door-lock" else "unlocked"
-        reported_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        payload = responses[STATUS_PATH]["payload"]
-        payload["lastUpdateTimestamp"] = reported_at
-        for door in payload["doors"].values():
-            if "lockStatus" in door:
-                door["lockStatus"] = {"status": state, "lastUpdateTimestamp": reported_at}
     if path == CLIMATE_CONTROL_PATH:
         status = "running" if body.get("command") == "start" else "stopped"
         responses[CLIMATE_STATUS_PATH]["payload"]["status"] = status
+        return
+    command = body.get("command")
+    reported_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    payload = responses[STATUS_PATH]["payload"]
+    payload["lastUpdateTimestamp"] = reported_at
+    if command in ("door-lock", "door-unlock"):
+        state = "locked" if command == "door-lock" else "unlocked"
+        for name, door in payload["doors"].items():
+            if "lockStatus" in door and name != "rearBack":
+                door["lockStatus"] = {"status": state, "lastUpdateTimestamp": reported_at}
+    if command in ("trunk-lock", "trunk-unlock"):
+        state = "locked" if command == "trunk-lock" else "unlocked"
+        payload["doors"]["rearBack"]["lockStatus"] = {
+            "status": state,
+            "lastUpdateTimestamp": reported_at,
+        }
+    if command == "power-window-close":
+        for window in payload["windows"].values():
+            window.update({"status": "close", "lastUpdateTimestamp": reported_at})
 
 
 @pytest.fixture
@@ -175,6 +194,7 @@ def fake_controller_class() -> type[FakeControllerBase]:
             "effect_delay": 0,
             "fail_reads_after_command": 0,
             "climate_return_code": "000000",
+            "unsupported_commands": set(),
             "pending": None,
             "failure": None,
             "login_failure": None,

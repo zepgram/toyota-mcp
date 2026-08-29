@@ -6,12 +6,12 @@
     "url": "https://github.com/zepgram/toyota-mcp",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "toyota-mcp",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "transport": { "type": "stdio" },
       "environmentVariables": [
         { "name": "TOYOTA_USERNAME", "description": "MyToyota account email", "isRequired": true, "isSecret": false },
@@ -20,7 +20,8 @@
         { "name": "TOYOTA_BRAND", "description": "T for Toyota (default), L for Lexus", "isRequired": false, "isSecret": false },
         { "name": "TOYOTA_USE_METRIC", "description": "true (default) for km/L, false for miles/gallons", "isRequired": false, "isSecret": false },
         { "name": "TOYOTA_OPEN_DATA", "description": "osm adds worldwide addresses, fr adds French addresses and fuel prices (default off)", "isRequired": false, "isSecret": false },
-        { "name": "TOYOTA_REMOTE_COMMANDS", "description": "true registers lock / unlock / climate command tools (default false)", "isRequired": false, "isSecret": false }
+        { "name": "TOYOTA_REMOTE_COMMANDS", "description": "true registers the remote command tools (default false)", "isRequired": false, "isSecret": false },
+        { "name": "TOYOTA_PLACES", "description": "named places, e.g. home=43.6045,1.4440;work=43.6290,1.3630", "isRequired": false, "isSecret": false }
       ]
     }
   ]

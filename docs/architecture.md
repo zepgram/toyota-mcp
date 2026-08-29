@@ -1,0 +1,81 @@
+# Architecture
+
+`toyota-mcp` turns a MyToyota Europe account into MCP tools. It is deliberately
+thin: every piece of Toyota knowledge lives in one place, and adding a feature
+means adding data, not plumbing.
+
+## Layers
+
+```
+config.py      Settings from TOYOTA_* env / .env (pydantic-settings), validated once.
+gateway.py     The only code that talks to Toyota: login, one MyT client, snapshot
+               cache, single-flight locking, stale-while-error, login cooldown,
+               remote commands, verification polling. Wraps pytoyoda's controller
+               to keep the raw payloads pytoyoda drops (lights, timestamps, oil).
+models.py      Typed reports returned to the model (pydantic → structuredContent),
+               conversion helpers, every user-facing note.
+tools/         One module per topic; each tool is a thin async function that calls
+               the gateway and builds a report. tools/commands.py holds the
+               declarative command specs.
+opendata.py    Optional enrichment providers (addresses, fuel prices) behind
+               TOYOTA_OPEN_DATA; fail-open.
+places.py      Named places (TOYOTA_PLACES) → "home" / "work" labels.
+prompts.py     MCP prompts (vehicle_briefing).
+server.py      MCPServer assembly, opt-ins, CLI entry (doctor / probe).
+doctor.py      Connectivity and capability diagnosis.  probe.py  Raw command probe.
+```
+
+Dependency direction is strictly downward: tools → gateway/models/opendata/places
+→ config. Tests fake Toyota at pytoyoda's `controller_class` seam
+(`tests/conftest.py`) and drive the real parsing pipeline.
+
+## Contracts
+
+- **Freshness**: every report carries `fetched_at`, `age_seconds`, `source`
+  (`live` / `cache` / `stale_cache`) and, when Toyota provides it,
+  `vehicle_reported_at`. Snapshots live 5 min (15 for health).
+- **Read-only by default**: without `TOYOTA_REMOTE_COMMANDS=true` no tool has
+  `readOnlyHint: false` and no request other than GET reaches Toyota.
+- **Commands**: `confirm=false` previews and sends nothing. A sent command is
+  acknowledged (`returnCode 000000`, else `failed`), the car is asked to report
+  (wake request), and the outcome is polled for up to 40 s:
+  `verified` = the car reported the expected state **and** either the state
+  changed or the report is newer than before; otherwise `accepted`. One command
+  per 10 s. Nothing is cached unless verified.
+- **Errors**: `errors.translate` is the single mapping from pytoyoda/httpx
+  exceptions to actionable messages, including Toyota's remote codes
+  (40006 unknown command, 40041 vehicle not supported).
+- **Privacy**: pytoyoda's debug logging (full HTTP exchanges) and httpx INFO
+  logging are silenced; coordinates, VINs and payloads are never logged;
+  enrichment providers only receive coordinates when enabled.
+
+## Extension points
+
+| To add… | Touch |
+|---|---|
+| a read tool | a snapshot key + extractor in `gateway.py`, a report in `models.py`, a tool in `tools/<topic>.py`, a fixture-backed test |
+| a remote command | one `CommandSpec` in `tools/commands.py` (`state`/`expected` for stateful commands, none for momentary ones) plus its evidence row below |
+| an enrichment provider | a `Provider` value and a method in `opendata.py`; gate it in the tool that uses it |
+| a configuration knob | a field in `config.py` (validated), `README`, `.env.example`, `server.json` |
+
+## Evidence — EU backend command vocabulary
+
+Probed with `toyota-mcp probe` (server-side answers). Toyota's accepted strings differ from pytoyoda's enum.
+
+| Command | 2026 Corolla full hybrid | Elsewhere |
+|---|---|---|
+| `door-lock` / `door-unlock` | accepted; lock verified live (car re-reported in 11 s) | pytoyoda#274 |
+| `trunk-lock` / `trunk-unlock` | `trunk-lock` accepted, trunk re-reported in 10 s | pytoyoda#274 |
+| `hazard-on` | accepted, momentary flash, car re-reported in 15 s | pytoyoda#274 |
+| `buzzer-warning`, `sound-horn` | not probed (audible) | verified in pytoyoda#274 |
+| `power-window-close` | 40041 vehicle not supported | works on a 2024 Lexus (pytoyoda#274) |
+| `/v2/remote/climate-control` start / stop | stop accepted (`000000`); start proven live by tyta | — |
+| `headlight-on` | 40041 vehicle not supported | — |
+| `find-vehicle`, `engine-start`, `engine-stop`, `hazard-off`, `headlight-off`, `power-window-on/off` | 40006 unknown command | `find-vehicle` also rejected in pytoyoda#274 |
+
+## Backlog (deliberately not built)
+
+- EV / PHEV charging control (`/v1/global/remote/electric/*`): pytoyoda supports
+  it, but nothing here can be verified without such a vehicle.
+- Several vehicles in one server instance: run one instance per `TOYOTA_VIN`.
+- Remote transport (streamable HTTP) needs authentication and TLS in front.

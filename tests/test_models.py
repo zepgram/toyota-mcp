@@ -182,6 +182,21 @@ def test_trips_report_empty_window_is_typed_not_error() -> None:
     assert "No trips recorded" in report.note
 
 
+def test_status_extras_track_the_newest_timestamp_anywhere() -> None:
+    extras = StatusExtras.from_payload(
+        {
+            "lastUpdateTimestamp": "2026-08-29T12:00:00.000Z",
+            "doors": {"rearBack": {"lockStatus": {"lastUpdateTimestamp": "2026-08-29T13:44:37Z"}}},
+            "lights": {"head": {"status": "off", "lastUpdateTimestamp": "not a date"}},
+        }
+    )
+    assert extras.reported_at == datetime(2026, 8, 29, 13, 44, 37, tzinfo=UTC)
+    older = StatusExtras.from_payload({"lastUpdateTimestamp": "2026-08-29T12:00:00.000Z"})
+    assert extras.is_newer_than(older)
+    assert not older.is_newer_than(extras)
+    assert not StatusExtras().is_newer_than(older)
+
+
 def test_status_extras_tolerate_garbage() -> None:
     assert StatusExtras.from_payload(None) == StatusExtras()
     assert StatusExtras.from_payload({"lights": "nope"}) == StatusExtras()

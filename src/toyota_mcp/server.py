@@ -8,10 +8,11 @@ from loguru import logger as upstream_logger
 from mcp.server import MCPServer
 from pydantic import ValidationError
 
-from toyota_mcp import __version__
+from toyota_mcp import __version__, prompts
 from toyota_mcp.config import Settings
 from toyota_mcp.gateway import AppContext, VehicleGateway
 from toyota_mcp.opendata import OpenData
+from toyota_mcp.places import Places
 from toyota_mcp.tools import register_all
 
 _BASE_INSTRUCTIONS = (
@@ -21,7 +22,8 @@ _BASE_INSTRUCTIONS = (
 )
 INSTRUCTIONS = _BASE_INSTRUCTIONS + "Nothing here actuates the vehicle."
 COMMANDS_INSTRUCTIONS = _BASE_INSTRUCTIONS + (
-    "Remote commands (lock, unlock, climate) are enabled: send one only when the user "
+    "Remote commands (locks, trunk, lights, horn, windows, climate) are enabled: send one "
+    "only when the user "
     "explicitly asked for it in this conversation, never on your own initiative; call "
     "with confirm=false to preview, then confirm=true once the user agreed."
 )
@@ -38,11 +40,12 @@ def create_server(
     gateway: VehicleGateway,
     opendata: OpenData | None = None,
     remote_commands: bool = False,
+    places: Places | None = None,
 ) -> MCPServer:
     @asynccontextmanager
     async def lifespan(server: MCPServer) -> AsyncIterator[AppContext]:
         try:
-            yield AppContext(gateway=gateway, opendata=opendata)
+            yield AppContext(gateway=gateway, opendata=opendata, places=places or Places())
         finally:
             await gateway.aclose()
             if opendata is not None:
@@ -56,6 +59,7 @@ def create_server(
         log_level="WARNING",
     )
     register_all(mcp, remote_commands=remote_commands)
+    prompts.register(mcp)
     return mcp
 
 
@@ -102,7 +106,12 @@ def main() -> None:
         raise SystemExit(2)
     settings = load_settings()
     opendata = OpenData(settings.open_data) if settings.open_data != "off" else None
-    create_server(VehicleGateway(settings), opendata, settings.remote_commands).run()
+    create_server(
+        VehicleGateway(settings),
+        opendata,
+        settings.remote_commands,
+        Places.parse(settings.places),
+    ).run()
 
 
 if __name__ == "__main__":

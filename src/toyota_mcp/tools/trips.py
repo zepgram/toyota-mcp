@@ -8,8 +8,15 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from toyota_mcp.gateway import AppContext
-from toyota_mcp.models import LastTripReport, TripReport, TripsReport, TripSummaryReport
+from toyota_mcp.models import (
+    CalendarPeriod,
+    LastTripReport,
+    TripReport,
+    TripsReport,
+    TripSummaryReport,
+)
 from toyota_mcp.opendata import OpenData
+from toyota_mcp.places import Places
 from toyota_mcp.tools.base import READ_ONLY
 
 
@@ -26,7 +33,7 @@ def register(mcp: MCPServer) -> None:
         if trip is None:
             raise ToolError("No trip has been recorded for this vehicle yet.")
         report = TripReport.from_trip(trip, context.gateway.use_metric)
-        await _add_addresses([report], context.opendata)
+        await _annotate_places([report], context.opendata, context.places)
         return LastTripReport(trip=report, freshness=freshness)
 
     @mcp.tool(title="Recent trips", annotations=READ_ONLY)
@@ -52,7 +59,7 @@ def register(mcp: MCPServer) -> None:
         report = TripsReport.from_trips(
             trips, window_from, window_to, limit, context.gateway.use_metric, freshness
         )
-        await _add_addresses(report.trips, context.opendata)
+        await _annotate_places(report.trips, context.opendata, context.places)
         return report
 
     @mcp.tool(title="Driving statistics over a period", annotations=READ_ONLY)
@@ -62,14 +69,35 @@ def register(mcp: MCPServer) -> None:
             int,
             Field(ge=1, le=365, description="Calendar days to cover, ending today (inclusive)."),
         ] = 7,
+        period: Annotated[
+            CalendarPeriod | None,
+            Field(
+                default=None,
+                description=(
+                    "Calendar period as shown in the MyToyota app (today, this_week, "
+                    "this_month, this_year); overrides days."
+                ),
+            ),
+        ] = None,
     ) -> TripSummaryReport:
-        """Aggregated driving statistics over a rolling window ending today.
+        """Aggregated driving statistics over a rolling window or a calendar period.
 
         Use for: average consumption over the last 7 days, EV-mode share this
         month, total distance this year. Consumption is recomputed over the
         whole window (total fuel vs total distance), not a mean of daily means.
+        Pass period to match the app's calendar figures.
         """
         gateway = ctx.request_context.lifespan_context.gateway
+        if period is not None:
+            summary, freshness = await gateway.calendar_summary(period)
+            window_from, window_to = _calendar_window(period)
+            return TripSummaryReport.from_daily_summaries(
+                [summary] if summary else [],
+                window_from,
+                window_to,
+                gateway.use_metric,
+                freshness,
+            ).model_copy(update={"period": period})
         window_from, window_to = _window(days)
         summaries, freshness = await gateway.daily_summaries(window_from, window_to)
         return TripSummaryReport.from_daily_summaries(
@@ -77,20 +105,35 @@ def register(mcp: MCPServer) -> None:
         )
 
 
-async def _add_addresses(reports: list[TripReport], opendata: OpenData | None) -> None:
-    if opendata is None:
-        return
+async def _annotate_places(
+    reports: list[TripReport], opendata: OpenData | None, places: Places
+) -> None:
     targets = [
         (place, place.latitude, place.longitude)
         for report in reports
         for place in (report.start, report.end)
         if place is not None and place.latitude is not None and place.longitude is not None
     ]
+    for place, latitude, longitude in targets:
+        place.place = places.match(latitude, longitude)
+    if opendata is None:
+        return
     addresses = await asyncio.gather(
         *(opendata.reverse_geocode(latitude, longitude) for _, latitude, longitude in targets)
     )
     for (place, _, _), address in zip(targets, addresses, strict=True):
         place.address = address
+
+
+def _calendar_window(period: CalendarPeriod) -> tuple[date, date]:
+    today = date.today()
+    if period == "today":
+        return today, today
+    if period == "this_week":
+        return today - timedelta(days=today.weekday()), today
+    if period == "this_month":
+        return today.replace(day=1), today
+    return today.replace(month=1, day=1), today
 
 
 def _window(days: int) -> tuple[date, date]:

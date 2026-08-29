@@ -3,6 +3,8 @@ from typing import Literal
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from toyota_mcp.places import Places
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TOYOTA_", env_file=".env", extra="ignore")
@@ -14,6 +16,13 @@ class Settings(BaseSettings):
     use_metric: bool = True
     open_data: Literal["off", "osm", "fr"] = "off"
     remote_commands: bool = False
+    places: str = ""
+
+    @field_validator("places")
+    @classmethod
+    def places_must_parse(cls, value: str) -> str:
+        Places.parse(value)
+        return value
 
     @field_validator("username")
     @classmethod

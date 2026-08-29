@@ -28,5 +28,10 @@ def register(mcp: MCPServer) -> None:
             else None
         )
         return LocationReport.from_location(
-            location.latitude, location.longitude, location, freshness, address
+            location.latitude,
+            location.longitude,
+            location,
+            freshness,
+            address,
+            context.places.match(location.latitude, location.longitude),
         )

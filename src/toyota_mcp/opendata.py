@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from math import asin, cos, radians, sin, sqrt
 from typing import Any, Literal
 
 import httpx
 from pydantic import BaseModel, Field
+
+from toyota_mcp.geo import haversine_km
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,6 @@ FUEL_PRICES_FRANCE_ONLY = (
 FuelKind = Literal["e10", "sp95", "sp98", "e85", "gazole", "gplc"]
 
 _TIMEOUT = httpx.Timeout(5.0)
-_EARTH_RADIUS_KM = 6371.0
 _NOMINATIM_MIN_INTERVAL = 1.0
 
 
@@ -146,8 +146,7 @@ def _station(
         price_eur_per_litre=float(price),
         price_updated_at=record.get(f"{fuel}_maj"),
         distance_km=round(
-            _haversine_km(latitude, longitude, float(station_latitude), float(station_longitude)),
-            1,
+            haversine_km(latitude, longitude, float(station_latitude), float(station_longitude)), 1
         ),
         open_24h=record.get("horaires_automate_24_24") == "Oui",
         available_fuels=list(record.get("carburants_disponibles") or []),
@@ -155,11 +154,3 @@ def _station(
         longitude=float(station_longitude),
         google_maps_url=f"https://www.google.com/maps?q={station_latitude},{station_longitude}",
     )
-
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    phi1, phi2 = radians(lat1), radians(lat2)
-    d_phi = radians(lat2 - lat1)
-    d_lambda = radians(lon2 - lon1)
-    a = sin(d_phi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(d_lambda / 2) ** 2
-    return 2 * _EARTH_RADIUS_KM * asin(sqrt(a))
