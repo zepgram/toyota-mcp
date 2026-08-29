@@ -41,6 +41,25 @@ def test_translate_table(exc: Exception, expected: str) -> None:
     assert errors.translate(exc).args[0] == expected
 
 
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("CTP-REMOTE-40006", "does not know that remote command"),
+        ("CTP-REMOTE-40041", "does not support that remote command"),
+    ],
+)
+def test_translate_remote_command_codes_observed_on_the_eu_backend(
+    code: str, expected: str
+) -> None:
+    exc = ToyotaApiError(
+        'Request Failed. 400, {"status":{"serviceIdentifier":"dcm19-remote-service",'
+        f'"messages":[{{"responseCode":"{code}","description":"..."}}]}}}}.'
+    )
+    message = errors.translate(exc).args[0]
+    assert expected in message
+    assert "nothing was sent" in message
+
+
 @pytest.mark.parametrize("status", [400, 401])
 def test_translate_rejected_request_is_not_called_transient(status: int) -> None:
     message = errors.translate(ToyotaApiError(f"Request Failed. {status}, denied.")).args[0]

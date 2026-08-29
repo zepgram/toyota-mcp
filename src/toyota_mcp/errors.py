@@ -37,7 +37,19 @@ NO_VEHICLES = (
 )
 LOCATION_NEVER_REPORTED = "No parked location has been reported by this vehicle yet."
 
+REMOTE_COMMAND_CODES = {
+    "CTP-REMOTE-40006": (
+        "Toyota's backend does not know that remote command (CTP-REMOTE-40006) — "
+        "nothing was sent to the car."
+    ),
+    "CTP-REMOTE-40041": (
+        "This vehicle does not support that remote command (CTP-REMOTE-40041) — "
+        "nothing was sent to the car."
+    ),
+}
+
 _API_ERROR_STATUS = re.compile(r"\b(\d{3})\b")
+_RESPONSE_CODE = re.compile(r'"responseCode"\s*:\s*"(CTP-[A-Z]+-\d+)"')
 
 
 def vin_not_found(requested_vin: str, available: list[str]) -> ToolError:
@@ -77,6 +89,9 @@ def translate(exc: Exception) -> ToolError:
     if isinstance(exc, ToyotaLoginError):
         return ToolError(LOGIN_FAILED)
     if isinstance(exc, ToyotaApiError):
+        code = _RESPONSE_CODE.search(str(exc))
+        if code is not None and code.group(1) in REMOTE_COMMAND_CODES:
+            return ToolError(REMOTE_COMMAND_CODES[code.group(1)])
         status = api_status_code(exc)
         if status in (403, 404):
             return ToolError(ENDPOINT_CHANGED)
