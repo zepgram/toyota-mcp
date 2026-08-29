@@ -81,7 +81,7 @@ specific car supports. Exit codes: `0` ok · `2` config · `3` auth ·
 | `TOYOTA_VIN` | no | — | Selects one vehicle when several share the account |
 | `TOYOTA_BRAND` | no | `T` | `T` Toyota, `L` Lexus |
 | `TOYOTA_USE_METRIC` | no | `true` | `false` switches to miles/gallons |
-| `TOYOTA_OPEN_DATA` | no | `off` | `fr` enables addresses and fuel prices from French government open data (see below) |
+| `TOYOTA_OPEN_DATA` | no | `off` | `osm` adds addresses worldwide (OpenStreetMap); `fr` adds French addresses and fuel prices (see below) |
 | `TOYOTA_REMOTE_COMMANDS` | no | `false` | `true` registers the lock / unlock / climate tools (see below) |
 
 A local `.env` file works too (see `.env.example`). Credentials never touch disk
@@ -95,16 +95,16 @@ actuate the vehicle. Remote commands exist but are opt-in — see below.
 | Tool | Example question | Key fields |
 |---|---|---|
 | `toyota_get_vehicle_info` | *What car is this? Is the subscription active?* | model, year, plate, colour, first use, subscriptions, declared remote capabilities |
-| `toyota_get_energy` | *Il reste combien d'autonomie ?* | fuel %, range (km/mi), battery or an explicit "not applicable" note |
+| `toyota_get_energy` | *How much range is left?* | fuel %, range (km/mi), battery or an explicit "not applicable" note |
 | `toyota_get_status` | *Is the car locked? Did I leave the lights on?* | doors/windows/trunk/hood, lock state, lights, rear-seat reminder, overall status |
-| `toyota_get_location` | *Elle est où ?* | lat/lon, address (with open data), Google Maps link |
+| `toyota_get_location` | *Where is the car?* | lat/lon, address (with open data), Google Maps link |
 | `toyota_get_odometer` | *How many km on the clock?* | odometer with unit |
-| `toyota_get_last_trip` | *Conso du dernier trajet ?* | distance, duration, consumption, EV share, hybrid mode split, start/end places |
+| `toyota_get_last_trip` | *What did the last trip consume?* | distance, duration, consumption, EV share, hybrid mode split, start/end places |
 | `toyota_get_trips` | *This week's trips?* | individual trips, newest first (≤ 92 days back) |
-| `toyota_get_trip_summary` | *Conso moyenne des 7 derniers jours ?* | rolling-window totals, recomputed L/100km, EV distance & time share |
+| `toyota_get_trip_summary` | *Average consumption over the last 7 days?* | rolling-window totals, recomputed L/100km, EV distance & time share |
 | `toyota_get_health` | *Any alerts on the car?* | warning lights, notifications, last recorded service |
 | `toyota_get_climate` | *Is the pre-heating running? What's the preset?* | remote climate state, target temperature, preset (duration, defrosters, heated seats) |
-| `toyota_find_fuel_stations` | *Station la moins chère près de la voiture ?* | cheapest stations for a fuel around the car (France, open data) |
+| `toyota_find_fuel_stations` | *Cheapest station near the car?* | cheapest stations for a fuel around the car (France, open data) |
 | `toyota_refresh_data` | *I just parked — refresh.* | bounded cloud re-fetch (never wakes the car) |
 
 ## Remote commands (optional)
@@ -135,19 +135,20 @@ Safety model:
 - Commands are rate-limited to one every 10 s. Horn, lights and window
   commands are deliberately not exposed.
 
-## French open data (optional)
+## Addresses and fuel prices (optional)
 
-With `TOYOTA_OPEN_DATA=fr` the server enriches answers with two French
-government services — no account, no key:
+`TOYOTA_OPEN_DATA` turns coordinates into addresses on the parked position and
+on trip start/end points — no account, no key:
 
-- **Addresses** from the national address base (`api-adresse.data.gouv.fr`) for
-  the parked position and trip start/end points;
-- **Fuel prices** self-reported by stations (`data.economie.gouv.fr`) for
-  `toyota_find_fuel_stations`.
+| Value | Addresses | Fuel prices |
+|---|---|---|
+| `off` (default) | — | — |
+| `osm` | worldwide, OpenStreetMap Nominatim (throttled to 1 request/s per its usage policy, results cached) | — |
+| `fr` | France, national address base (`api-adresse.data.gouv.fr`) | `toyota_find_fuel_stations`, prices self-reported by stations to `data.economie.gouv.fr` |
 
-Both only make sense in France. Enabling it sends the car's coordinates to those
-two services; nothing is sent anywhere otherwise. Address lookups fail open (the
-answer simply has no address).
+Enabling it sends the car's coordinates to that service; nothing is sent
+anywhere otherwise. Address lookups fail open (the answer simply has no
+address).
 
 ## How fresh is the data?
 
@@ -216,7 +217,7 @@ returning misleading nulls.
 ```bash
 git clone https://github.com/zepgram/toyota-mcp && cd toyota-mcp
 uv sync
-uv run pytest                       # 119 tests, no network
+uv run pytest                       # 121 tests, no network
 uv run ruff check && uv run ruff format --check
 uv run mypy src tests
 ```

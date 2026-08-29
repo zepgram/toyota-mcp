@@ -19,7 +19,7 @@
         { "name": "TOYOTA_VIN", "description": "VIN selector when several vehicles share the account", "isRequired": false, "isSecret": false },
         { "name": "TOYOTA_BRAND", "description": "T for Toyota (default), L for Lexus", "isRequired": false, "isSecret": false },
         { "name": "TOYOTA_USE_METRIC", "description": "true (default) for km/L, false for miles/gallons", "isRequired": false, "isSecret": false },
-        { "name": "TOYOTA_OPEN_DATA", "description": "fr adds French addresses and fuel prices (default off)", "isRequired": false, "isSecret": false },
+        { "name": "TOYOTA_OPEN_DATA", "description": "osm adds worldwide addresses, fr adds French addresses and fuel prices (default off)", "isRequired": false, "isSecret": false },
         { "name": "TOYOTA_REMOTE_COMMANDS", "description": "true registers lock / unlock / climate command tools (default false)", "isRequired": false, "isSecret": false }
       ]
     }

@@ -9,7 +9,7 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 from pytoyoda.exceptions import ToyotaApiError, ToyotaLoginError
 
-from tests.conftest import TINO_VIN, FakeControllerBase
+from tests.conftest import SAMPLE_VIN, FakeControllerBase
 from toyota_mcp import errors
 from toyota_mcp.cache import Snapshot
 from toyota_mcp.config import Settings
@@ -121,7 +121,7 @@ async def test_powertrain(gateway: VehicleGateway) -> None:
 
 async def test_vin_selection(fake_controller_class: type[FakeControllerBase]) -> None:
     settings = Settings(
-        username="user@example.com", password="secret", vin=TINO_VIN, use_metric=True
+        username="user@example.com", password="secret", vin=SAMPLE_VIN, use_metric=True
     )
     gateway = VehicleGateway(settings, controller_class=fake_controller_class)
     assert await gateway.powertrain() == "full_hybrid"
@@ -138,14 +138,14 @@ async def test_unknown_vin_lists_available(
         await gateway.powertrain()
     message = excinfo.value.args[0]
     assert "…6789" in message
-    assert "Tino" in message
+    assert "Corolla" in message
 
 
 def test_vehicle_label_never_exposes_a_full_vin() -> None:
     unnamed = SimpleNamespace(alias="JTDZARBE0RJ000099", vin="JTDZARBE0RJ000099")
-    named = SimpleNamespace(alias="Tino", vin=TINO_VIN)
+    named = SimpleNamespace(alias="Corolla", vin=SAMPLE_VIN)
     assert vehicle_label(cast(Any, unnamed)) == "unnamed (…0099)"
-    assert vehicle_label(cast(Any, named)) == "Tino (…0042)"
+    assert vehicle_label(cast(Any, named)) == "Corolla (…0042)"
 
 
 async def test_empty_account(

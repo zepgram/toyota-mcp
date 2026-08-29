@@ -9,7 +9,7 @@ from pydantic import Field
 
 from toyota_mcp.gateway import AppContext
 from toyota_mcp.models import LastTripReport, TripReport, TripsReport, TripSummaryReport
-from toyota_mcp.opendata import FrenchOpenData
+from toyota_mcp.opendata import OpenData
 from toyota_mcp.tools.base import READ_ONLY
 
 
@@ -19,7 +19,7 @@ def register(mcp: MCPServer) -> None:
         """Most recent trip: distance, duration, consumption, hybrid mode split, places.
 
         Use for: how was the last trip? what did the last drive consume?
-        Start/end addresses need TOYOTA_OPEN_DATA=fr (France).
+        Start/end addresses need TOYOTA_OPEN_DATA (osm or fr).
         """
         context = ctx.request_context.lifespan_context
         trip, freshness = await context.gateway.last_trip()
@@ -77,7 +77,7 @@ def register(mcp: MCPServer) -> None:
         )
 
 
-async def _add_addresses(reports: list[TripReport], opendata: FrenchOpenData | None) -> None:
+async def _add_addresses(reports: list[TripReport], opendata: OpenData | None) -> None:
     if opendata is None:
         return
     targets = [

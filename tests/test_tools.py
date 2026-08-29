@@ -18,7 +18,7 @@ from tests.conftest import (
 from toyota_mcp import errors
 from toyota_mcp.gateway import VehicleGateway
 from toyota_mcp.models import FULL_HYBRID_BATTERY_NOTE
-from toyota_mcp.opendata import FrenchOpenData
+from toyota_mcp.opendata import OpenData
 from toyota_mcp.server import create_server
 
 EXPECTED_TOOLS = {
@@ -38,7 +38,7 @@ EXPECTED_TOOLS = {
 
 
 @pytest.fixture
-def server(gateway: VehicleGateway, opendata: FrenchOpenData) -> MCPServer:
+def server(gateway: VehicleGateway, opendata: OpenData) -> MCPServer:
     return create_server(gateway, opendata)
 
 
@@ -284,7 +284,7 @@ async def test_get_vehicle_info(server: MCPServer) -> None:
     result = await _call(server, "toyota_get_vehicle_info")
     assert not result.is_error
     content = result.structured_content
-    assert content["alias"] == "Tino"
+    assert content["alias"] == "Corolla"
     assert content["vin_suffix"] == "0042"
     assert content["model"] == "Corolla"
     assert content["model_year"] == "2020"

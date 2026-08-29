@@ -13,7 +13,7 @@ from pytoyoda.exceptions import ToyotaApiError
 
 from toyota_mcp.config import Settings
 from toyota_mcp.gateway import VehicleGateway
-from toyota_mcp.opendata import FrenchOpenData
+from toyota_mcp.opendata import OpenData
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -30,8 +30,9 @@ ROUTES = {
     "/v1/vehicle/climate-status": "climate_status.json",
 }
 
-TINO_VIN = "JTDZARBE0RJ000042"
+SAMPLE_VIN = "JTDZARBE0RJ000042"
 BAN_LABEL = "12 Rue de l'Exemple 31000 Toulouse"
+OSM_LABEL = "12, Rue de l'Exemple, Toulouse, Haute-Garonne, Occitanie, France"
 FUEL_RECORDS = [
     {
         "adresse": "Route de l'Exemple",
@@ -69,6 +70,8 @@ class OpenDataStub:
             return httpx.Response(self.status_code, json={"message": "boom"})
         if request.url.host == "api-adresse.data.gouv.fr":
             return httpx.Response(200, json={"features": [{"properties": {"label": BAN_LABEL}}]})
+        if request.url.host == "nominatim.openstreetmap.org":
+            return httpx.Response(200, json={"display_name": OSM_LABEL})
         return httpx.Response(200, json={"results": FUEL_RECORDS})
 
 
@@ -214,5 +217,5 @@ def opendata_stub() -> OpenDataStub:
 
 
 @pytest.fixture
-def opendata(opendata_stub: OpenDataStub) -> FrenchOpenData:
-    return FrenchOpenData(transport=httpx.MockTransport(opendata_stub.handler))
+def opendata(opendata_stub: OpenDataStub) -> OpenData:
+    return OpenData("fr", transport=httpx.MockTransport(opendata_stub.handler))

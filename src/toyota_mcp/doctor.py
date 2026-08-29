@@ -172,7 +172,7 @@ def _print_tool_table(vehicle: Vehicle[Any], settings: Settings) -> None:
         (
             "toyota_find_fuel_stations",
             settings.open_data == "fr",
-            "set TOYOTA_OPEN_DATA=fr (French open data)",
+            "set TOYOTA_OPEN_DATA=fr (French fuel prices)",
         ),
         ("toyota_refresh_data", True, ""),
         (

@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     vin: str | None = None
     brand: Literal["T", "L"] = "T"
     use_metric: bool = True
-    open_data: Literal["off", "fr"] = "off"
+    open_data: Literal["off", "osm", "fr"] = "off"
     remote_commands: bool = False
 
     @field_validator("username")

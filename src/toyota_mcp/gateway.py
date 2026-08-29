@@ -44,7 +44,7 @@ from toyota_mcp.cache import (
 )
 from toyota_mcp.config import Settings
 from toyota_mcp.models import Freshness, Powertrain, StatusExtras
-from toyota_mcp.opendata import FrenchOpenData
+from toyota_mcp.opendata import OpenData
 
 T = TypeVar("T")
 
@@ -104,7 +104,7 @@ class ClimateBundle:
 @dataclass
 class AppContext:
     gateway: VehicleGateway
-    opendata: FrenchOpenData | None = None
+    opendata: OpenData | None = None
 
 
 def _capturing(base: type[Controller]) -> tuple[type[Controller], dict[str, Any]]:

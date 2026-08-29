@@ -84,7 +84,7 @@ def test_is_transient(exc: Exception, transient: bool) -> None:
 
 
 def test_vin_not_found_lists_available() -> None:
-    error = errors.vin_not_found("JTDZARBE0RJ000042", ["Tino (…0042)"])
+    error = errors.vin_not_found("JTDZARBE0RJ000042", ["Corolla (…0042)"])
     message = error.args[0]
     assert "…0042" in message
-    assert "Tino" in message
+    assert "Corolla" in message

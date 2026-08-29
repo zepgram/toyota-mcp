@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from math import asin, cos, radians, sin, sqrt
 from typing import Any, Literal
 
@@ -9,20 +11,25 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+Provider = Literal["fr", "osm"]
 BAN_REVERSE_URL = "https://api-adresse.data.gouv.fr/reverse/"
+NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 FUEL_PRICES_URL = (
     "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/"
     "prix-des-carburants-en-france-flux-instantane-v2/records"
 )
 FUEL_PRICES_SOURCE = (
-    "Prix relevés par les stations (data.economie.gouv.fr, flux instantané) — "
-    "prices are those reported by the stations themselves."
+    "Prices are self-reported by the stations to the French government open-data feed "
+    "(data.economie.gouv.fr, live flow)."
+)
+FUEL_PRICES_FRANCE_ONLY = (
+    "Fuel prices are only available in France — set TOYOTA_OPEN_DATA=fr to enable them."
 )
 FuelKind = Literal["e10", "sp95", "sp98", "e85", "gazole", "gplc"]
-FUEL_KINDS: tuple[FuelKind, ...] = ("e10", "sp95", "sp98", "e85", "gazole", "gplc")
 
 _TIMEOUT = httpx.Timeout(5.0)
 _EARTH_RADIUS_KM = 6371.0
+_NOMINATIM_MIN_INTERVAL = 1.0
 
 
 class OpenDataUnavailable(Exception):
@@ -43,24 +50,26 @@ class FuelStation(BaseModel):
     google_maps_url: str
 
 
-class FrenchOpenData:
-    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
+class OpenData:
+    def __init__(self, provider: Provider, transport: httpx.AsyncBaseTransport | None = None):
+        self.provider = provider
         self._client = httpx.AsyncClient(
             timeout=_TIMEOUT, transport=transport, headers={"User-Agent": "toyota-mcp"}
         )
         self._addresses: dict[tuple[float, float], str | None] = {}
+        self._nominatim_lock = asyncio.Lock()
+        self._nominatim_last_call = 0.0
 
     async def reverse_geocode(self, latitude: float, longitude: float) -> str | None:
         key = (round(latitude, 4), round(longitude, 4))
         if key in self._addresses:
             return self._addresses[key]
         try:
-            response = await self._client.get(
-                BAN_REVERSE_URL, params={"lat": key[0], "lon": key[1]}
+            label = (
+                await self._ban_reverse(*key)
+                if self.provider == "fr"
+                else await self._nominatim_reverse(*key)
             )
-            response.raise_for_status()
-            features = response.json().get("features") or []
-            label = str(features[0]["properties"]["label"]) if features else None
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             logger.warning("reverse geocoding failed (%s)", type(exc).__name__)
             return None
@@ -70,6 +79,8 @@ class FrenchOpenData:
     async def fuel_stations(
         self, latitude: float, longitude: float, radius_km: int, fuel: FuelKind, limit: int
     ) -> list[FuelStation]:
+        if self.provider != "fr":
+            raise OpenDataUnavailable(FUEL_PRICES_FRANCE_ONLY)
         where = (
             f"within_distance(geom, geom'POINT({longitude} {latitude})', {radius_km}km) "
             f"AND {fuel}_prix IS NOT NULL"
@@ -94,6 +105,29 @@ class FrenchOpenData:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+    async def _ban_reverse(self, latitude: float, longitude: float) -> str | None:
+        response = await self._client.get(
+            BAN_REVERSE_URL, params={"lat": latitude, "lon": longitude}
+        )
+        response.raise_for_status()
+        features = response.json().get("features") or []
+        return str(features[0]["properties"]["label"]) if features else None
+
+    async def _nominatim_reverse(self, latitude: float, longitude: float) -> str | None:
+        # Nominatim's usage policy: at most one request per second.
+        async with self._nominatim_lock:
+            await asyncio.sleep(
+                max(0.0, _NOMINATIM_MIN_INTERVAL - (time.monotonic() - self._nominatim_last_call))
+            )
+            self._nominatim_last_call = time.monotonic()
+            response = await self._client.get(
+                NOMINATIM_REVERSE_URL,
+                params={"lat": latitude, "lon": longitude, "format": "jsonv2"},
+            )
+        response.raise_for_status()
+        name = response.json().get("display_name")
+        return str(name) if name else None
 
 
 def _station(

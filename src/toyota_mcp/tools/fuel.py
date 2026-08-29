@@ -25,9 +25,9 @@ def register(mcp: MCPServer) -> None:
     ) -> FuelStationsReport:
         """Cheapest stations selling a given fuel around the car's last parked position.
 
-        Use for: where can I fill up cheaply near the car? France only —
-        prices are self-reported by stations through the French government
-        open-data feed. Requires TOYOTA_OPEN_DATA=fr.
+        Use for: where can I fill up cheaply near the car? France only:
+        prices come from the French government open-data feed and need
+        TOYOTA_OPEN_DATA=fr.
         """
         context = ctx.request_context.lifespan_context
         if context.opendata is None:

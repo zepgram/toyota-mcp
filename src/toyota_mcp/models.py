@@ -58,11 +58,10 @@ HYBRID_BREAKDOWN_NOTE = (
     "Toyota hybrid coaching split of the trip: electric-only driving, battery charging, "
     "eco and power driving."
 )
-ADDRESS_NOTE = "Addresses come from the French national address base and only exist in France."
 OPEN_DATA_DISABLED = (
-    "French open-data enrichment is disabled. Set TOYOTA_OPEN_DATA=fr to enable addresses and "
-    "fuel prices — it sends the car's position to French government APIs (BAN, "
-    "data.economie.gouv.fr)."
+    "Open-data enrichment is disabled. Set TOYOTA_OPEN_DATA=osm (OpenStreetMap addresses, "
+    "worldwide) or fr (French national address base plus fuel prices) — it sends the car's "
+    "position to that service."
 )
 LightState = Literal["on", "off", "unknown"]
 CommandStatus = Literal["needs_confirmation", "verified", "accepted", "failed"]
@@ -421,7 +420,7 @@ class LocationReport(BaseModel):
     longitude: float
     place_label: str | None = Field(default=None, description="Toyota's place name, if any.")
     address: str | None = Field(
-        default=None, description="Postal address; requires TOYOTA_OPEN_DATA=fr (France only)."
+        default=None, description="Postal address; requires TOYOTA_OPEN_DATA (osm or fr)."
     )
     google_maps_url: str
     freshness: Freshness
@@ -449,7 +448,7 @@ class TripPlace(BaseModel):
     latitude: float | None
     longitude: float | None
     address: str | None = Field(
-        default=None, description="Postal address; requires TOYOTA_OPEN_DATA=fr (France only)."
+        default=None, description="Postal address; requires TOYOTA_OPEN_DATA (osm or fr)."
     )
 
 
