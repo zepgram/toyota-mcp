@@ -163,6 +163,13 @@ def _print_tool_table(vehicle: Vehicle[Any], settings: Settings) -> None:
             "no parked location reported yet",
         ),
         ("toyota_get_health", True, ""),
+        (
+            "toyota_get_charging",
+            vehicle.type in ("plug_in_hybrid", "electric")
+            and vehicle.electric_status is not None
+            and vehicle.electric_status.battery_level is not None,
+            "no plug-in battery on this powertrain",
+        ),
         ("toyota_get_last_trip / trips / trip_summary", True, "verified on first call"),
         (
             "toyota_get_climate",
@@ -177,7 +184,7 @@ def _print_tool_table(vehicle: Vehicle[Any], settings: Settings) -> None:
         ("toyota_refresh_data", True, ""),
         (
             "toyota_lock_doors / unlock_doors / lock_trunk / unlock_trunk / find_car / "
-            "sound_horn / close_windows / wake_vehicle",
+            "sound_horn / close_windows / charge_now / wake_vehicle",
             settings.remote_commands,
             "set TOYOTA_REMOTE_COMMANDS=true (opt-in; the car may reject some)",
         ),

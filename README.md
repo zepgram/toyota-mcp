@@ -97,6 +97,7 @@ actuate the vehicle. Remote commands exist but are opt-in — see below.
 |---|---|---|
 | `toyota_get_vehicle_info` | *What car is this? Is the subscription active?* | model, year, plate, colour, first use, subscriptions, declared remote capabilities |
 | `toyota_get_energy` | *How much range is left?* | fuel %, range (km/mi), battery or an explicit "not applicable" note |
+| `toyota_get_charging` | *Is it charging? When is the next scheduled charge?* | plug-in battery %, charging status, EV range, time to full, schedules (PHEV / EV only) |
 | `toyota_get_status` | *Is the car locked? Did I leave the lights on?* | doors/windows/trunk/hood, lock state, lights, rear-seat reminder, overall status |
 | `toyota_get_location` | *Where is the car?* | lat/lon, address (with open data), Google Maps link |
 | `toyota_get_odometer` | *How many km on the clock?* | odometer with unit |
@@ -120,6 +121,7 @@ Set `TOYOTA_REMOTE_COMMANDS=true` to register the write tools:
 | `toyota_sound_horn` | short horn signal | reversible |
 | `toyota_close_windows` | closes the power windows (model-dependent) | reversible |
 | `toyota_start_climate` | starts pre-conditioning with the saved preset (or a given temperature, 15–30 °C by 0.5) — on a hybrid this runs the engine | **destructive** |
+| `toyota_charge_now` | starts charging immediately (PHEV / EV, plugged in) | reversible |
 | `toyota_stop_climate` | stops pre-conditioning | reversible |
 | `toyota_wake_vehicle` | asks the car to report its state now (costs a little 12 V battery) | reversible |
 
@@ -191,7 +193,7 @@ cloud — it never wakes the car, so it cannot drain the 12V battery.
 | Doors/windows/locks | ✅ | ✅ | ✅ |
 | Location, odometer, health | ✅ | ✅ | ✅ |
 | Trips incl. **EV share** | ✅ | ✅ | ✅ (no EV share) |
-| Plug-in battery %, charging | — explicit "not applicable" note | ✅ | — |
+| Plug-in battery %, charging status, EV range, schedules, charge now | — explicit "not applicable" note | ✅ (untested by the author — see docs) | — |
 
 Toyota exposes **no traction-battery charge for self-charging hybrids** — it
 only exists on the in-car display. The tools say so explicitly instead of

@@ -13,6 +13,8 @@ from toyota_mcp.opendata import FuelKind, FuelStation
 if TYPE_CHECKING:
     from pytoyoda.models.climate import ClimateSettings, ClimateStatus
     from pytoyoda.models.dashboard import Dashboard
+    from pytoyoda.models.electric_status import ElectricStatus
+    from pytoyoda.models.endpoints.electric import ChargingSchedule
     from pytoyoda.models.location import Location
     from pytoyoda.models.lock_status import Door, LockStatus, Window
     from pytoyoda.models.nofication import Notification
@@ -66,6 +68,19 @@ OPEN_DATA_DISABLED = (
 )
 LightState = Literal["on", "off", "unknown"]
 CommandStatus = Literal["needs_confirmation", "verified", "accepted", "failed"]
+PLUG_IN_POWERTRAINS: tuple[Powertrain, ...] = ("plug_in_hybrid", "electric")
+ELECTRIC_NOT_APPLICABLE = (
+    "Not applicable: this powertrain has no plug-in battery — charging data only exists "
+    "for plug-in hybrids and electric vehicles."
+)
+ELECTRIC_NOT_REPORTED = (
+    "The vehicle has not reported its charging state yet — try toyota_wake_vehicle when "
+    "remote commands are enabled, or ask again later."
+)
+CHARGING_UNTESTED_NOTE = (
+    "Charging data follows pytoyoda's model of Toyota's electric endpoint; field semantics "
+    "(e.g. charging_status values) are Toyota's own."
+)
 CONFIRMATION_NOTE = "Nothing was sent. Ask the user to confirm, then call again with confirm=true."
 
 
@@ -437,6 +452,69 @@ class ClimateReport(BaseModel):
         )
 
 
+class ChargingScheduleReport(BaseModel):
+    id: int
+    enabled: bool
+    type: str = Field(description="'startOnly' or 'startEnd'.")
+    start: str = Field(description="Local time HH:MM.")
+    end: str | None = Field(default=None, description="Local time HH:MM, for startEnd.")
+    days: list[str] = Field(description="Weekdays the schedule applies to.")
+
+
+class ChargingReport(BaseModel):
+    powertrain: Powertrain
+    battery_level_percent: float | None
+    charging_status: str | None = Field(description="Raw Toyota status, e.g. 'none', 'charging'.")
+    ev_range: Quantity | None
+    ev_range_with_ac: Quantity | None
+    remaining_charge_minutes: float | None = Field(
+        default=None, description="Minutes until fully charged, when charging."
+    )
+    fuel_level_percent: float | None = Field(default=None, description="Plug-in hybrids only.")
+    can_set_next_charging_event: bool | None
+    next_charging_event: str | None = Field(
+        default=None, description="Type and time of the next scheduled charging event."
+    )
+    next_scheduled_window: str | None = Field(
+        default=None, description="Next active schedule window (start → end), if any."
+    )
+    schedules: list[ChargingScheduleReport]
+    note: str
+    freshness: Freshness
+
+    @classmethod
+    def from_electric_status(
+        cls, status: ElectricStatus[Any], powertrain: Powertrain, freshness: Freshness
+    ) -> ChargingReport:
+        event = status.next_charging_event
+        window = status.active_scheduled_charging
+        return cls(
+            powertrain=powertrain,
+            battery_level_percent=status.battery_level,
+            charging_status=status.charging_status,
+            ev_range=_quantity(status.ev_range_with_unit),
+            ev_range_with_ac=_quantity(status.ev_range_with_ac_with_unit),
+            remaining_charge_minutes=(
+                float(status.remaining_charge_time)
+                if status.remaining_charge_time is not None
+                else None
+            ),
+            fuel_level_percent=_electric_fuel_level(status),
+            can_set_next_charging_event=status.can_set_next_charging_event,
+            next_charging_event=(
+                f"{event.event_type} at {event.timestamp.isoformat()}" if event else None
+            ),
+            next_scheduled_window=(
+                f"{window.start.isoformat()} → {window.end.isoformat() if window.end else '?'}"
+                if window
+                else None
+            ),
+            schedules=[_schedule(schedule) for schedule in status.charging_schedules or []],
+            note=CHARGING_UNTESTED_NOTE,
+            freshness=freshness.with_vehicle_time(status.last_update_timestamp),
+        )
+
+
 class OdometerReport(BaseModel):
     odometer: Quantity
     freshness: Freshness
@@ -696,6 +774,7 @@ class CommandReport(BaseModel):
     detail: str
     doors: StatusReport | None = None
     climate: ClimateReport | None = None
+    charging: ChargingReport | None = None
     elapsed_seconds: float | None = None
 
 
@@ -766,6 +845,29 @@ def telemetry_reported_at(dashboard: Dashboard[Any]) -> datetime | None:
     telemetry = getattr(dashboard, "_telemetry", None)
     reported_at = getattr(telemetry, "timestamp", None)
     return reported_at if isinstance(reported_at, datetime) else None
+
+
+def _electric_fuel_level(status: ElectricStatus[Any]) -> float | None:
+    # pytoyoda does not surface the PHEV fuel level of the electric endpoint.
+    raw = getattr(getattr(status, "_electric_status", None), "fuel_level", None)
+    return float(raw) if isinstance(raw, int | float) else None
+
+
+def _schedule(schedule: ChargingSchedule) -> ChargingScheduleReport:
+    days = schedule.days
+    names = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    return ChargingScheduleReport(
+        id=schedule.id,
+        enabled=schedule.enabled,
+        type=schedule.type,
+        start=f"{schedule.start_time.hour:02d}:{schedule.start_time.minute:02d}",
+        end=(
+            f"{schedule.end_time.hour:02d}:{schedule.end_time.minute:02d}"
+            if schedule.end_time
+            else None
+        ),
+        days=[name for name in names if getattr(days, name, 0)],
+    )
 
 
 def trunk_lock_state(lock_status: LockStatus) -> LockState:

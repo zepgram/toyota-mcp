@@ -9,9 +9,10 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - Remote commands (opt-in `TOYOTA_REMOTE_COMMANDS=true`): lock/unlock doors,
   lock/unlock trunk, find car (hazard lights), sound horn, close windows, start/stop
-  remote climate, wake the vehicle — every command previews with `confirm=false`,
+  remote climate, charge now (plug-in), wake the vehicle — every command previews with `confirm=false`,
   checks Toyota's acknowledgement and verifies the car-reported outcome.
-- `toyota_get_vehicle_info`, `toyota_get_climate`, `toyota_find_fuel_stations`.
+- `toyota_get_vehicle_info`, `toyota_get_climate`, `toyota_find_fuel_stations`,
+  `toyota_get_charging` (plug-in hybrids and EVs; untested by the author).
 - Lights, rear-seat reminder, overall status and warning count in `toyota_get_status`;
   oil indicators and the full service history in `toyota_get_health`; hybrid mode
   split and start/end places in trips; calendar periods in `toyota_get_trip_summary`.

@@ -20,6 +20,7 @@ from toyota_mcp.gateway import (
 )
 from toyota_mcp.models import (
     CONFIRMATION_NOTE,
+    ChargingReport,
     ClimateReport,
     CommandReport,
     Freshness,
@@ -240,6 +241,64 @@ def register(mcp: MCPServer) -> None:
             confirm=confirm,
             preview="Would stop remote climate",
             send=gateway.stop_climate,
+        )
+
+    @mcp.tool(title="Start charging now", annotations=REVERSIBLE)
+    async def toyota_charge_now(
+        ctx: Context[AppContext], confirm: Confirm = False
+    ) -> CommandReport:
+        """Start charging the plug-in battery immediately, ahead of any schedule.
+
+        Plug-in hybrids and electric vehicles only; the car must be plugged
+        in. Only when the user explicitly asked; preview with confirm=false
+        when in doubt. Verified against the charging state the car reports.
+        """
+        gateway = ctx.request_context.lifespan_context.gateway
+        before, before_freshness = await gateway.charging()
+        powertrain = await gateway.powertrain()
+        before_report = ChargingReport.from_electric_status(before, powertrain, before_freshness)
+        if not confirm:
+            return CommandReport(
+                command="charge-now",
+                status="needs_confirmation",
+                detail=f"Would start charging now (currently {before_report.charging_status}). "
+                f"{CONFIRMATION_NOTE}",
+                charging=before_report,
+            )
+        try:
+            await gateway.charge_now()
+        except CommandRejected as exc:
+            return CommandReport(
+                command="charge-now", status="failed", detail=str(exc), charging=before_report
+            )
+        started = time.monotonic()
+        after, freshness, verified = await gateway.wait_for_charging(
+            lambda now: (
+                now.charging_status != before.charging_status
+                or (
+                    now.last_update_timestamp is not None
+                    and before.last_update_timestamp is not None
+                    and now.last_update_timestamp > before.last_update_timestamp
+                )
+            )
+        )
+        elapsed = round(time.monotonic() - started, 1)
+        charging = (
+            ChargingReport.from_electric_status(after, powertrain, freshness)
+            if after is not None and freshness is not None
+            else None
+        )
+        detail = (
+            f"The car reports charging status '{charging.charging_status if charging else '?'}'."
+            if verified
+            else UNVERIFIED_HINT.format(seconds=int(elapsed), read_tool="toyota_get_charging")
+        )
+        return CommandReport(
+            command="charge-now",
+            status="verified" if verified else "accepted",
+            detail=detail,
+            charging=charging,
+            elapsed_seconds=elapsed,
         )
 
     @mcp.tool(title="Wake the car and re-read its state", annotations=REVERSIBLE)

@@ -1,0 +1,39 @@
+{
+  "payload": {
+    "batteryLevel": 79,
+    "canSetNextChargingEvent": true,
+    "chargingStatus": "none",
+    "evRange": { "unit": "km", "value": 57.3 },
+    "evRangeWithAc": { "unit": "km", "value": 54.4 },
+    "fuelLevel": 41,
+    "fuelRange": { "unit": "km", "value": 302.0 },
+    "lastUpdateTimestamp": "2026-08-28T17:53:59Z",
+    "remainingChargeTime": 95,
+    "chargingSchedules": [
+      {
+        "id": 1,
+        "enabled": true,
+        "type": "startEnd",
+        "startTime": { "hour": 23, "minute": 0 },
+        "endTime": { "hour": 6, "minute": 30 },
+        "days": { "mon": 1, "tue": 1, "wed": 1, "thu": 1, "fri": 1, "sat": 0, "sun": 0 }
+      },
+      {
+        "id": 2,
+        "enabled": false,
+        "type": "startOnly",
+        "startTime": { "hour": 13, "minute": 0 },
+        "days": { "mon": 0, "tue": 0, "wed": 0, "thu": 0, "fri": 0, "sat": 1, "sun": 1 }
+      }
+    ]
+  },
+  "status": {
+    "messages": [
+      {
+        "description": "Request Completed Successfully",
+        "detailedDescription": "Request Completed Successfully",
+        "responseCode": "ONE-GLOBAL-RS-10000"
+      }
+    ]
+  }
+}

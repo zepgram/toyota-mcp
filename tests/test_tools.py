@@ -12,8 +12,10 @@ from tests.conftest import (
     CLIMATE_CONTROL_PATH,
     CLIMATE_STATUS_PATH,
     COMMAND_PATH,
+    ELECTRIC_COMMAND_PATH,
     STATUS_PATH,
     FakeControllerBase,
+    make_plug_in_hybrid,
 )
 from toyota_mcp import errors
 from toyota_mcp.gateway import VehicleGateway
@@ -24,6 +26,7 @@ from toyota_mcp.server import create_server
 
 EXPECTED_TOOLS = {
     "toyota_get_vehicle_info",
+    "toyota_get_charging",
     "toyota_get_climate",
     "toyota_find_fuel_stations",
     "toyota_get_status",
@@ -63,6 +66,7 @@ COMMAND_TOOLS = {
     "toyota_close_windows",
     "toyota_start_climate",
     "toyota_stop_climate",
+    "toyota_charge_now",
     "toyota_wake_vehicle",
 }
 DESTRUCTIVE_TOOLS = {"toyota_unlock_doors", "toyota_unlock_trunk", "toyota_start_climate"}
@@ -404,6 +408,83 @@ async def test_get_energy_full_hybrid(server: MCPServer) -> None:
     assert content["battery"] is None
     assert content["battery_note"] == FULL_HYBRID_BATTERY_NOTE
     assert content["freshness"]["vehicle_reported_at"] is not None
+
+
+async def test_get_charging_not_applicable_on_full_hybrid(server: MCPServer) -> None:
+    result = await _call(server, "toyota_get_charging")
+    assert result.is_error
+    assert "plug-in" in result.content[0].text
+
+
+async def test_get_charging_on_plug_in_hybrid(
+    server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    make_plug_in_hybrid(fake_controller_class.responses)
+    result = await _call(server, "toyota_get_charging")
+    assert not result.is_error
+    content = result.structured_content
+    assert content["powertrain"] == "plug_in_hybrid"
+    assert content["battery_level_percent"] == 79
+    assert content["charging_status"] == "none"
+    assert content["ev_range"] == {"value": 57.3, "unit": "km"}
+    assert content["remaining_charge_minutes"] == 95
+    assert content["fuel_level_percent"] == 41
+    assert content["can_set_next_charging_event"] is True
+    assert content["schedules"][0] == {
+        "id": 1,
+        "enabled": True,
+        "type": "startEnd",
+        "start": "23:00",
+        "end": "06:30",
+        "days": ["mon", "tue", "wed", "thu", "fri"],
+    }
+    assert content["schedules"][1]["end"] is None
+    assert content["next_scheduled_window"] is not None
+    assert content["freshness"]["vehicle_reported_at"] == "2026-08-28T17:53:59Z"
+
+
+async def test_get_energy_on_plug_in_hybrid_has_battery(
+    server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    make_plug_in_hybrid(fake_controller_class.responses)
+    result = await _call(server, "toyota_get_energy")
+    assert not result.is_error
+    content = result.structured_content
+    assert content["powertrain"] == "plug_in_hybrid"
+    assert content["battery"]["level_percent"] == 79
+    assert content["battery_note"] is None
+
+
+async def test_charge_now_preview_then_verified(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    make_plug_in_hybrid(fake_controller_class.responses)
+    preview = await _call(command_server, "toyota_charge_now")
+    assert preview.structured_content["status"] == "needs_confirmation"
+    assert preview.structured_content["charging"]["charging_status"] == "none"
+    assert fake_controller_class.commands == []
+    result = await _call(command_server, "toyota_charge_now", {"confirm": True})
+    content = result.structured_content
+    assert content["status"] == "verified"
+    assert content["charging"]["charging_status"] == "charging"
+    assert fake_controller_class.commands == [(ELECTRIC_COMMAND_PATH, {"command": "CHARGE_NOW"})]
+    assert "/v1/global/remote/electric/realtime-status" in fake_controller_class.calls
+
+
+async def test_charge_now_not_applicable_on_full_hybrid(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    result = await _call(command_server, "toyota_charge_now", {"confirm": True})
+    assert result.is_error
+    assert fake_controller_class.commands == []
+
+
+async def test_wake_refreshes_electric_state_on_plug_in_hybrid(
+    command_server: MCPServer, fake_controller_class: type[FakeControllerBase]
+) -> None:
+    make_plug_in_hybrid(fake_controller_class.responses)
+    await _call(command_server, "toyota_wake_vehicle")
+    assert "/v1/global/remote/electric/realtime-status" in fake_controller_class.calls
 
 
 async def test_get_odometer(server: MCPServer) -> None:

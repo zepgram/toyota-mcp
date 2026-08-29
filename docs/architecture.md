@@ -72,10 +72,13 @@ Probed with `toyota-mcp probe` (server-side answers). Toyota's accepted strings 
 | `/v2/remote/climate-control` start / stop | stop accepted (`000000`); start proven live by tyta | — |
 | `headlight-on` | 40041 vehicle not supported | — |
 | `find-vehicle`, `engine-start`, `engine-stop`, `hazard-off`, `headlight-off`, `power-window-on/off` | 40006 unknown command | `find-vehicle` also rejected in pytoyoda#274 |
+| `/v1/global/remote/electric/command` `CHARGE_NOW` (`toyota_charge_now`) | not applicable (full hybrid) | **untested** — shape from pytoyoda; reports welcome |
+| `/v1/global/remote/electric/status` (`toyota_get_charging`) | not applicable | **untested** — parsed by pytoyoda's model, fixture from its sample payload |
 
 ## Backlog (deliberately not built)
 
-- EV / PHEV charging control (`/v1/global/remote/electric/*`): pytoyoda supports
-  it, but nothing here can be verified without such a vehicle.
+- Charging schedules as commands (`RESERVE_CHARGE`, `SET_CHARGING_TIME`): the
+  payload (day, start/end times) cannot be verified without a plug-in vehicle;
+  reading schedules and `CHARGE_NOW` are shipped untested and say so.
 - Several vehicles in one server instance: run one instance per `TOYOTA_VIN`.
 - Remote transport (streamable HTTP) needs authentication and TLS in front.

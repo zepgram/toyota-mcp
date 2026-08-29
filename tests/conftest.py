@@ -28,6 +28,7 @@ ROUTES = {
     "/v1/trips": "trips.json",
     "/v1/vehicle/climate-settings": "climate_settings.json",
     "/v1/vehicle/climate-status": "climate_status.json",
+    "/v1/global/remote/electric/status": "electric_status.json",
 }
 
 SAMPLE_VIN = "JTDZARBE0RJ000042"
@@ -85,6 +86,8 @@ COMMAND_PATH = "/v1/global/remote/command"
 CLIMATE_CONTROL_PATH = "/v2/remote/climate-control"
 STATUS_PATH = "/v1/vehicle/status"
 CLIMATE_STATUS_PATH = "/v1/vehicle/climate-status"
+ELECTRIC_STATUS_PATH = "/v1/global/remote/electric/status"
+ELECTRIC_COMMAND_PATH = "/v1/global/remote/electric/command"
 UNSUPPORTED = (
     'Request Failed. 400, {"status":{"messages":[{"responseCode":"CTP-REMOTE-40041",'
     '"description":"Vehicle not supported"}]}}'
@@ -134,7 +137,7 @@ class FakeControllerBase(Controller):
         if method == "POST":
             if path == COMMAND_PATH and (body or {}).get("command") in cls.unsupported_commands:
                 raise ToyotaApiError(UNSUPPORTED)
-            if path in (COMMAND_PATH, CLIMATE_CONTROL_PATH):
+            if path in (COMMAND_PATH, CLIMATE_CONTROL_PATH, ELECTRIC_COMMAND_PATH):
                 cls.commands.append((path, body or {}))
                 if cls.commands_take_effect:
                     cls.pending = (path, body or {}, cls.effect_delay)
@@ -146,7 +149,11 @@ class FakeControllerBase(Controller):
         if cls.commands and cls.fail_reads_after_command > 0:
             cls.fail_reads_after_command -= 1
             raise ToyotaApiError("Request Failed. 429, slow down.")
-        if cls.pending is not None and path in (STATUS_PATH, CLIMATE_STATUS_PATH):
+        if cls.pending is not None and path in (
+            STATUS_PATH,
+            CLIMATE_STATUS_PATH,
+            ELECTRIC_STATUS_PATH,
+        ):
             pending_path, pending_body, delay = cls.pending
             if delay <= 0:
                 _apply_command(cls.responses, pending_path, pending_body)
@@ -156,7 +163,18 @@ class FakeControllerBase(Controller):
         return copy.deepcopy(cls.responses[path])
 
 
+def make_plug_in_hybrid(responses: dict[str, Any]) -> None:
+    vehicle = responses["/v2/vehicle/guid"]["payload"][0]
+    vehicle["fuelType"] = "I"
+    vehicle["extendedCapabilities"]["econnectVehicleStatusCapable"] = True
+
+
 def _apply_command(responses: dict[str, Any], path: str, body: dict[str, Any]) -> None:
+    if path == ELECTRIC_COMMAND_PATH:
+        payload = responses[ELECTRIC_STATUS_PATH]["payload"]
+        payload["chargingStatus"] = "charging"
+        payload["lastUpdateTimestamp"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return
     if path == CLIMATE_CONTROL_PATH:
         status = "running" if body.get("command") == "start" else "stopped"
         responses[CLIMATE_STATUS_PATH]["payload"]["status"] = status

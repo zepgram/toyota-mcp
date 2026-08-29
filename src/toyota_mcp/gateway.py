@@ -15,12 +15,14 @@ from pytoyoda.controller import Controller
 from pytoyoda.exceptions import ToyotaLoginError
 from pytoyoda.models.climate import ClimateSettings, ClimateStatus
 from pytoyoda.models.dashboard import Dashboard
+from pytoyoda.models.electric_status import ElectricStatus
 from pytoyoda.models.endpoints.climate import (
     HeatingOptionsModel,
     SeatOptionsModel,
     V2RemoteClimateControlRequestModel,
 )
 from pytoyoda.models.endpoints.common import UnitValueModel
+from pytoyoda.models.endpoints.electric import ChargeCommandType, NextChargeSettings
 from pytoyoda.models.location import Location
 from pytoyoda.models.lock_status import LockStatus
 from pytoyoda.models.nofication import Notification
@@ -42,7 +44,14 @@ from toyota_mcp.cache import (
     SnapshotCache,
 )
 from toyota_mcp.config import Settings
-from toyota_mcp.models import Freshness, Powertrain, StatusExtras
+from toyota_mcp.models import (
+    ELECTRIC_NOT_APPLICABLE,
+    ELECTRIC_NOT_REPORTED,
+    PLUG_IN_POWERTRAINS,
+    Freshness,
+    Powertrain,
+    StatusExtras,
+)
 from toyota_mcp.opendata import OpenData
 from toyota_mcp.places import Places
 
@@ -175,6 +184,13 @@ class VehicleGateway:
     async def status(self) -> tuple[StatusBundle, Freshness]:
         return await self._snapshot("status", TTL_STATUS, ["status"], self._status_bundle)
 
+    async def charging(self) -> tuple[ElectricStatus[Any], Freshness]:
+        if await self.powertrain() not in PLUG_IN_POWERTRAINS:
+            raise ToolError(ELECTRIC_NOT_APPLICABLE)
+        return await self._snapshot(
+            "electric", TTL_TELEMETRY, ["electric_status"], _extract_electric
+        )
+
     async def climate(self) -> tuple[ClimateBundle, Freshness]:
         return await self._snapshot(
             "climate", TTL_STATUS, ["climate_settings", "climate_status"], _extract_climate
@@ -264,8 +280,25 @@ class VehicleGateway:
             wake=lambda vehicle: vehicle.refresh_status(),
         )
 
+    async def charge_now(self) -> datetime:
+        if await self.powertrain() not in PLUG_IN_POWERTRAINS:
+            raise ToolError(ELECTRIC_NOT_APPLICABLE)
+        return await self._command(
+            "electric",
+            send=lambda vehicle: vehicle.send_next_charging_command(
+                NextChargeSettings(command=ChargeCommandType.CHARGE_NOW)
+            ),
+            wake=lambda vehicle: vehicle.refresh_electric_realtime_status(),
+        )
+
+    async def wait_for_charging(
+        self, satisfied: Callable[[ElectricStatus[Any]], bool]
+    ) -> tuple[ElectricStatus[Any] | None, Freshness | None, bool]:
+        return await self._wait_for("electric", ["electric_status"], _extract_electric, satisfied)
+
     async def wake(self) -> tuple[StatusBundle, StatusBundle | None, Freshness | None, bool]:
         before, _ = await self.status()
+        plug_in = await self.powertrain() in PLUG_IN_POWERTRAINS
         async with self._lock:
             self._check_cooldown()
             vehicle = await self._ensure_vehicle()
@@ -273,7 +306,10 @@ class VehicleGateway:
                 await vehicle.refresh_status()
             with contextlib.suppress(Exception):
                 await vehicle.refresh_climate_status()
-            for key in ("status", "telemetry", "location", "climate"):
+            if plug_in:
+                with contextlib.suppress(Exception):
+                    await vehicle.refresh_electric_realtime_status()
+            for key in ("status", "telemetry", "location", "climate", "electric"):
                 self._cache.drop(key)
         after, freshness, reported = await self.wait_for_status(
             lambda now: now.extras.is_newer_than(before.extras)
@@ -584,6 +620,13 @@ def _switch(enabled: bool | None) -> str | None:
     if enabled is None:
         return None
     return "on" if enabled else "off"
+
+
+def _extract_electric(vehicle: Vehicle[Any]) -> ElectricStatus[Any]:
+    status = vehicle.electric_status
+    if status is None or (status.battery_level is None and status.last_update_timestamp is None):
+        raise ToolError(ELECTRIC_NOT_REPORTED)
+    return status
 
 
 def _extract_climate(vehicle: Vehicle[Any]) -> ClimateBundle:
