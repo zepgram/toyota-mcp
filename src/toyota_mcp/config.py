@@ -14,16 +14,16 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="TOYOTA_", env_file=".env", extra="ignore")
 
-    username: str
-    password: SecretStr
+    username: str | None = None
+    password: SecretStr | None = None
     vin: str | None = None
     brand: Literal["T", "L"] = "T"
     use_metric: bool = True
 
     @field_validator("username")
     @classmethod
-    def username_must_be_an_email(cls, value: str) -> str:
-        if "@" not in value:
+    def username_must_be_an_email(cls, value: str | None) -> str | None:
+        if value is not None and "@" not in value:
             raise ValueError("must be the MyToyota account email address")
         return value
 

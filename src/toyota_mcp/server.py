@@ -9,11 +9,12 @@ from loguru import logger as upstream_logger
 from mcp.server import MCPServer
 from pydantic import ValidationError
 
-from toyota_mcp import __version__, probe, prompts
+from toyota_mcp import __version__, login, probe, prompts
 from toyota_mcp.config import ServerOptions, Settings
 from toyota_mcp.gateway import AppContext, VehicleGateway
 from toyota_mcp.opendata import OpenData
 from toyota_mcp.places import Places
+from toyota_mcp.session import NO_CREDENTIALS, SessionStore
 from toyota_mcp.tools import register_all
 
 _BASE_INSTRUCTIONS = (
@@ -61,8 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="toyota-mcp",
         description=(
-            "MCP server for MyToyota Europe. Credentials come from the TOYOTA_USERNAME / "
-            "TOYOTA_PASSWORD environment variables (or a .env file); features are options."
+            "MCP server for MyToyota Europe. Sign in once with `toyota-mcp login` (your "
+            "password stays with Toyota); TOYOTA_USERNAME / TOYOTA_PASSWORD remain as a "
+            "headless fallback. Features are options."
         ),
     )
     parser.add_argument("--version", action="version", version=__version__)
@@ -88,7 +90,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SPEC",
         help='named places within 200 m, e.g. "home=43.6045,1.4440;work=43.6290,1.3630"',
     )
-    commands = parser.add_subparsers(dest="subcommand", metavar="{doctor,probe}")
+    commands = parser.add_subparsers(dest="subcommand", metavar="{login,logout,doctor,probe}")
+    commands.add_parser(
+        "login", help="sign in through your browser and save the session (no password stored)"
+    )
+    commands.add_parser("logout", help="forget the saved session")
     doctor = commands.add_parser(
         "doctor", help="check credentials, vehicles and which tools this car supports"
     )
@@ -118,23 +124,26 @@ def silence_upstream_debug_logs() -> None:
 
 def load_settings() -> Settings:
     try:
-        return Settings()
+        settings = Settings()
     except ValidationError as exc:
         for error in exc.errors():
             variable = "TOYOTA_" + "_".join(str(part) for part in error["loc"]).upper()
             print(f"{variable}: {error['msg']}", file=sys.stderr)
-        print(
-            "Set the variables in your MCP host's env block or in a local .env file "
-            "(see .env.example).",
-            file=sys.stderr,
-        )
         raise SystemExit(2) from exc
+    if settings.password is None and SessionStore().load() is None:
+        print(NO_CREDENTIALS, file=sys.stderr)
+        raise SystemExit(2)
+    return settings
 
 
 def main() -> None:
     silence_upstream_debug_logs()
     args = build_parser().parse_args()
     options = ServerOptions(read_only=args.read_only, addresses=args.addresses, places=args.places)
+    if args.subcommand == "login":
+        raise SystemExit(login.run())
+    if args.subcommand == "logout":
+        raise SystemExit(login.logout())
     if args.subcommand == "doctor":
         from toyota_mcp import doctor
 

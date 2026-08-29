@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
@@ -112,11 +113,17 @@ def test_two_vehicles_need_a_vin(
     assert _posted(controller_class) == []
 
 
-def test_missing_credentials(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_no_credentials_and_no_session_says_how_to_sign_in(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     monkeypatch.delenv("TOYOTA_USERNAME", raising=False)
     monkeypatch.delenv("TOYOTA_PASSWORD", raising=False)
-    monkeypatch.chdir("/")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("toyota_mcp.probe.SessionStore", lambda: _EmptyStore())
     assert probe.run(["headlight-on"]) == EXIT_CONFIG
-    assert "CONFIG" in capsys.readouterr().out
+    assert "toyota-mcp login" in capsys.readouterr().out
+
+
+class _EmptyStore:
+    def load(self) -> None:
+        return None

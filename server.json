@@ -20,14 +20,14 @@
       "environmentVariables": [
         {
           "name": "TOYOTA_USERNAME",
-          "description": "MyToyota account email",
-          "isRequired": true,
+          "description": "MyToyota account email — only for the headless password sign-in; prefer `toyota-mcp login`",
+          "isRequired": false,
           "isSecret": false
         },
         {
           "name": "TOYOTA_PASSWORD",
-          "description": "MyToyota account password",
-          "isRequired": true,
+          "description": "MyToyota account password — only for the headless password sign-in; prefer `toyota-mcp login`",
+          "isRequired": false,
           "isSecret": true
         },
         {

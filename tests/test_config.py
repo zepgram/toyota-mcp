@@ -7,6 +7,7 @@ from toyota_mcp.config import Settings
 def test_explicit_values() -> None:
     settings = Settings(username="a@b.c", password="pw", vin="VIN123", brand="L", use_metric=False)
     assert settings.username == "a@b.c"
+    assert settings.password is not None
     assert settings.password.get_secret_value() == "pw"
     assert settings.vin == "VIN123"
     assert settings.brand == "L"
@@ -20,6 +21,7 @@ def test_env_loading(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TOYOTA_PASSWORD", "env-secret")
     settings = Settings(_env_file=None)
     assert settings.username == "env@example.com"
+    assert settings.password is not None
     assert settings.password.get_secret_value() == "env-secret"
     assert settings.vin is None
     assert settings.brand == "T"
@@ -38,10 +40,11 @@ def test_password_never_leaks_in_repr() -> None:
     assert "hunter2" not in str(settings)
 
 
-def test_missing_credentials_name_the_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_credentials_are_optional_because_a_saved_session_may_replace_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     for variable in ("TOYOTA_USERNAME", "TOYOTA_PASSWORD"):
         monkeypatch.delenv(variable, raising=False)
-    with pytest.raises(ValidationError) as excinfo:
-        Settings(_env_file=None)
-    missing = {error["loc"][0] for error in excinfo.value.errors()}
-    assert missing == {"username", "password"}
+    settings = Settings(_env_file=None)
+    assert settings.username is None
+    assert settings.password is None

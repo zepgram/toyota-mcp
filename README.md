@@ -30,7 +30,8 @@ charging) in plain language.
 
 - A **MyToyota Europe** account (the API covers Europe only — North America and
   Japan use entirely different systems).
-- The account must **not have MFA/2FA enabled** (unsupported by the underlying API).
+- Sign in with `toyota-mcp login`, or with account credentials in the
+  environment (that path cannot handle MFA/2FA).
 - The vehicle must appear in the MyToyota mobile app.
 - Python 3.11+ and [`uv`](https://docs.astral.sh/uv/) for the zero-install `uvx` launcher
   (`uvx` fetches a suitable Python by itself).
@@ -40,6 +41,19 @@ charging) in plain language.
 > such breakage within days.
 
 ## Quickstart
+
+### Sign in once
+
+```bash
+uvx toyota-mcp login
+```
+
+Your browser opens Toyota's own sign-in page. Toyota then redirects to an
+address the browser cannot follow (`com.toyota.oneapp:/…`) and shows an error —
+that is expected: copy that address from the address bar and paste it back. The
+session is saved in your operating system's credential store and refreshed
+automatically. **Your password is never seen by this program and never written
+to a configuration file.** `uvx toyota-mcp logout` forgets it.
 
 ### Claude Desktop
 
@@ -51,11 +65,7 @@ Add to `claude_desktop_config.json` (macOS:
   "mcpServers": {
     "toyota": {
       "command": "uvx",
-      "args": ["toyota-mcp"],
-      "env": {
-        "TOYOTA_USERNAME": "you@example.com",
-        "TOYOTA_PASSWORD": "your-password"
-      }
+      "args": ["toyota-mcp"]
     }
   }
 }
@@ -68,42 +78,58 @@ Add options after `toyota-mcp` in `args` — for example
 ### Claude Code
 
 ```bash
-claude mcp add --transport stdio toyota \
-  --env TOYOTA_USERNAME=you@example.com \
-  --env TOYOTA_PASSWORD=your-password \
-  -- uvx toyota-mcp
+claude mcp add --transport stdio toyota -- uvx toyota-mcp
 ```
 
 ### Cursor, VS Code and other MCP clients
 
 Any client that speaks stdio works with the same shape — command `uvx`,
-arguments `["toyota-mcp"]`, credentials in the environment. In VS Code, add it
-to `.vscode/mcp.json`; in Cursor, to `~/.cursor/mcp.json`.
+arguments `["toyota-mcp"]`. In VS Code, add it to `.vscode/mcp.json`; in Cursor,
+to `~/.cursor/mcp.json`.
 
 ### First contact: the doctor
 
 Before wiring anything into an MCP host, check your setup from a terminal:
 
 ```bash
-TOYOTA_USERNAME=you@example.com TOYOTA_PASSWORD=... uvx toyota-mcp doctor
+uvx toyota-mcp doctor
 ```
 
 It validates credentials, lists your vehicles, and prints which tools your
 specific car supports. Exit codes: `0` ok · `2` config · `3` auth ·
 `4` no vehicle · `5` API error · `6` command rejected (`probe`).
 
+## Authentication
+
+Toyota has no third-party API programme: there is no developer portal, no
+per-application token, and the mobile app signs in with your account password.
+This server therefore offers two ways in, and prefers the one where it never
+holds that password.
+
+**Browser sign-in (recommended).** `toyota-mcp login` sends you to Toyota's own
+page, takes the authorization code back, and keeps only the **refresh token**,
+in your operating system's credential store (Keychain, Windows Credential
+Locker, Secret Service). Nothing is written to any configuration file, and
+accounts with MFA should work because the second factor happens in the browser
+(untested — reports welcome).
+
+**Password in the environment.** `TOYOTA_USERNAME` and `TOYOTA_PASSWORD` still
+work for headless setups, but most MCP hosts store their `env` block as
+plain text on disk, so prefer the browser sign-in on a workstation. Accounts
+with MFA cannot use this path.
+
 ## Configuration
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `TOYOTA_USERNAME` | yes | — | MyToyota account email |
-| `TOYOTA_PASSWORD` | yes | — | MyToyota account password |
+| `TOYOTA_USERNAME` | no | — | MyToyota account email — only for the password sign-in |
+| `TOYOTA_PASSWORD` | no | — | MyToyota account password — only for the password sign-in |
 | `TOYOTA_VIN` | no | — | Selects one vehicle when several share the account |
 | `TOYOTA_BRAND` | no | `T` | `T` Toyota, `L` Lexus |
 | `TOYOTA_USE_METRIC` | no | `true` | `false` switches to miles/gallons |
 
-Environment variables carry the **account** only. Features are command-line
-options, so they are visible in `toyota-mcp --help` and in your host's `args`:
+Features are command-line options, visible in `toyota-mcp --help` and in your
+host's `args`:
 
 | Option | Default | Description |
 |---|---|---|
@@ -114,8 +140,7 @@ options, so they are visible in `toyota-mcp --help` and in your host's `args`:
 ```json
 "toyota": {
   "command": "uvx",
-  "args": ["toyota-mcp", "--addresses", "osm", "--places", "home=43.6045,1.4440"],
-  "env": { "TOYOTA_USERNAME": "you@example.com", "TOYOTA_PASSWORD": "your-password" }
+  "args": ["toyota-mcp", "--addresses", "osm", "--places", "home=43.6045,1.4440"]
 }
 ```
 
@@ -289,6 +314,8 @@ returning misleading nulls.
 | Message | What it means |
 |---|---|
 | `MyToyota sign-in failed…` | Wrong credentials, or MFA is enabled on the account. Login pauses 60 s between attempts. Run `uvx toyota-mcp doctor`. |
+| `No saved session and no credentials…` | Run `uvx toyota-mcp login`, or set `TOYOTA_USERNAME` / `TOYOTA_PASSWORD`. |
+| A saved session stops working | Toyota can invalidate it (password change, session revocation). Run `uvx toyota-mcp login` again. |
 | `…rate-limiting or temporarily unavailable…` | Transient — NOT an auth problem. The gateway 429s freely; retry in a minute. |
 | `Toyota appears to have changed this API endpoint…` | Toyota migrated a route. Update toyota-mcp / pytoyoda. |
 | `No parked location has been reported…` | The car has never pushed a position (or lacks the capability). |
@@ -298,8 +325,9 @@ returning misleading nulls.
 
 ## Security & privacy
 
-- Credentials come from environment variables only; the password is held as a
-  `SecretStr` and never logged.
+- With `toyota-mcp login` the password never reaches this program: only a
+  refresh token is kept, in the operating system's credential store. With the
+  environment path the password is held as a `SecretStr` and never logged.
 - GPS coordinates, VINs and payloads are never written to logs — pytoyoda's
   debug logging (which dumps full HTTP exchanges) is disabled; only warnings
   reach stderr.

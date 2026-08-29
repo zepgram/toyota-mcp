@@ -9,12 +9,17 @@ from typing import Any, ClassVar
 
 from pydantic import ValidationError
 from pytoyoda.client import MyT
-from pytoyoda.controller import Controller
 from pytoyoda.exceptions import ToyotaLoginError
 from pytoyoda.models.vehicle import Vehicle
 
 from toyota_mcp.config import ServerOptions, Settings
 from toyota_mcp.gateway import vehicle_label
+from toyota_mcp.session import (
+    NO_CREDENTIALS,
+    SessionController,
+    SessionStore,
+    account_username,
+)
 
 EXIT_OK = 0
 EXIT_CONFIG = 2
@@ -41,7 +46,7 @@ _SENSITIVE_KEY_PARTS = (
 _VIN_PATTERN = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b")
 
 
-class RecordingController(Controller):
+class RecordingController(SessionController):
     captured: ClassVar[dict[str, Any]] = {}
 
     async def request_json(
@@ -69,17 +74,27 @@ def run(dump: bool = False, options: ServerOptions | None = None) -> int:
             variable = "TOYOTA_" + "_".join(str(part) for part in error["loc"]).upper()
             print(f"CONFIG  {variable}: {error['msg']}")
         return EXIT_CONFIG
+    session = SessionStore().load()
+    if session is not None:
+        print(
+            f"OK      saved browser session{f' for {session.username}' if session.username else ''}"
+        )
+    elif settings.password is not None:
+        print("OK      signing in with TOYOTA_USERNAME / TOYOTA_PASSWORD")
+    else:
+        print(f"CONFIG  {NO_CREDENTIALS}")
+        return EXIT_CONFIG
     return asyncio.run(_diagnose(settings, dump, options))
 
 
 async def _diagnose(settings: Settings, dump: bool, options: ServerOptions) -> int:
     RecordingController.captured.clear()
     client = MyT(
-        username=settings.username,
-        password=settings.password.get_secret_value(),
+        username=account_username(settings.username),
+        password=settings.password.get_secret_value() if settings.password else "",
         use_metric=settings.use_metric,
         brand=settings.brand,
-        controller_class=RecordingController if dump else Controller,
+        controller_class=RecordingController if dump else SessionController,
     )
     try:
         started = time.perf_counter()
