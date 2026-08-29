@@ -13,8 +13,9 @@ def register(mcp: MCPServer) -> None:
         preset a remote start would apply (target temperature, duration, defrosters,
         heated seats).
 
-        Use for: is the climate running? what temperature is the preset? This
-        server cannot start or stop it.
+        Use for: is the climate running? what temperature is the preset?
+        Starting or stopping it is done with toyota_start_climate /
+        toyota_stop_climate when remote commands are enabled.
         """
         gateway = ctx.request_context.lifespan_context.gateway
         bundle, freshness = await gateway.climate()

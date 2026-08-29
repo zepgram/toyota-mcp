@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import copy
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
 import httpx
 import pytest
 from pytoyoda.controller import Controller
+from pytoyoda.exceptions import ToyotaApiError
 
 from toyota_mcp.config import Settings
 from toyota_mcp.gateway import VehicleGateway
@@ -78,6 +80,8 @@ def load_responses() -> dict[str, Any]:
 
 COMMAND_PATH = "/v1/global/remote/command"
 CLIMATE_CONTROL_PATH = "/v2/remote/climate-control"
+STATUS_PATH = "/v1/vehicle/status"
+CLIMATE_STATUS_PATH = "/v1/vehicle/climate-status"
 ACCEPTED = {
     "status": {"messages": [{"responseCode": "CTP-GENERIC-20001", "description": "Success"}]}
 }
@@ -88,6 +92,10 @@ class FakeControllerBase(Controller):
     calls: ClassVar[list[str]]
     commands: ClassVar[list[tuple[str, dict[str, Any]]]]
     commands_take_effect: ClassVar[bool]
+    effect_delay: ClassVar[int]
+    fail_reads_after_command: ClassVar[int]
+    climate_return_code: ClassVar[str]
+    pending: ClassVar[tuple[str, dict[str, Any], int] | None]
     failure: ClassVar[Exception | None]
     login_failure: ClassVar[Exception | None]
     login_count: ClassVar[int]
@@ -116,23 +124,39 @@ class FakeControllerBase(Controller):
         if cls.failure is not None:
             raise cls.failure
         if method == "POST":
-            cls.commands.append((path, body or {}))
-            if cls.commands_take_effect:
-                _apply_command(cls.responses, path, body or {})
-            return copy.deepcopy(ACCEPTED)
+            if path in (COMMAND_PATH, CLIMATE_CONTROL_PATH):
+                cls.commands.append((path, body or {}))
+                if cls.commands_take_effect:
+                    cls.pending = (path, body or {}, cls.effect_delay)
+            response: dict[str, Any] = copy.deepcopy(ACCEPTED)
+            if path == CLIMATE_CONTROL_PATH:
+                response["payload"] = {"returnCode": cls.climate_return_code}
+            return response
+        if cls.commands and cls.fail_reads_after_command > 0:
+            cls.fail_reads_after_command -= 1
+            raise ToyotaApiError("Request Failed. 429, slow down.")
+        if cls.pending is not None and path in (STATUS_PATH, CLIMATE_STATUS_PATH):
+            pending_path, pending_body, delay = cls.pending
+            if delay <= 0:
+                _apply_command(cls.responses, pending_path, pending_body)
+                cls.pending = None
+            else:
+                cls.pending = (pending_path, pending_body, delay - 1)
         return copy.deepcopy(cls.responses[path])
 
 
 def _apply_command(responses: dict[str, Any], path: str, body: dict[str, Any]) -> None:
     if path == COMMAND_PATH and body.get("command") in ("door-lock", "door-unlock"):
         state = "locked" if body["command"] == "door-lock" else "unlocked"
-        doors = responses["/v1/vehicle/status"]["payload"]["doors"]
-        for door in doors.values():
+        reported_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        payload = responses[STATUS_PATH]["payload"]
+        payload["lastUpdateTimestamp"] = reported_at
+        for door in payload["doors"].values():
             if "lockStatus" in door:
-                door["lockStatus"]["status"] = state
+                door["lockStatus"] = {"status": state, "lastUpdateTimestamp": reported_at}
     if path == CLIMATE_CONTROL_PATH:
         status = "running" if body.get("command") == "start" else "stopped"
-        responses["/v1/vehicle/climate-status"]["payload"]["status"] = status
+        responses[CLIMATE_STATUS_PATH]["payload"]["status"] = status
 
 
 @pytest.fixture
@@ -145,6 +169,10 @@ def fake_controller_class() -> type[FakeControllerBase]:
             "calls": [],
             "commands": [],
             "commands_take_effect": True,
+            "effect_delay": 0,
+            "fail_reads_after_command": 0,
+            "climate_return_code": "000000",
+            "pending": None,
             "failure": None,
             "login_failure": None,
             "login_count": 0,
@@ -172,14 +200,11 @@ def gateway(settings: Settings, fake_controller_class: type[FakeControllerBase])
 def command_gateway(
     fake_controller_class: type[FakeControllerBase],
 ) -> VehicleGateway:
-    settings = Settings(
-        username="user@example.com", password="secret", use_metric=True, remote_commands=True
-    )
     return VehicleGateway(
-        settings,
+        Settings(username="user@example.com", password="secret", use_metric=True),
         controller_class=fake_controller_class,
         command_poll_interval=0,
-        command_timeout=0,
+        command_timeout=0.2,
     )
 
 

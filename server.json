@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.zepgram/toyota",
-  "description": "Read-only MCP server for MyToyota Europe: fuel, range, location, trips, EV share, health.",
+  "description": "MCP server for MyToyota Europe (read-only by default): fuel, range, location, trips, EV share, health.",
   "repository": {
     "url": "https://github.com/zepgram/toyota-mcp",
     "source": "github"
@@ -18,7 +18,9 @@
         { "name": "TOYOTA_PASSWORD", "description": "MyToyota account password", "isRequired": true, "isSecret": true },
         { "name": "TOYOTA_VIN", "description": "VIN selector when several vehicles share the account", "isRequired": false, "isSecret": false },
         { "name": "TOYOTA_BRAND", "description": "T for Toyota (default), L for Lexus", "isRequired": false, "isSecret": false },
-        { "name": "TOYOTA_USE_METRIC", "description": "true (default) for km/L, false for miles/gallons", "isRequired": false, "isSecret": false }
+        { "name": "TOYOTA_USE_METRIC", "description": "true (default) for km/L, false for miles/gallons", "isRequired": false, "isSecret": false },
+        { "name": "TOYOTA_OPEN_DATA", "description": "fr adds French addresses and fuel prices (default off)", "isRequired": false, "isSecret": false },
+        { "name": "TOYOTA_REMOTE_COMMANDS", "description": "true registers lock / unlock / climate command tools (default false)", "isRequired": false, "isSecret": false }
       ]
     }
   ]

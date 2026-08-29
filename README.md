@@ -2,7 +2,7 @@
 
 # toyota-mcp
 
-Ask your Toyota anything — read-only [MCP](https://modelcontextprotocol.io) server for MyToyota Europe.
+Ask your Toyota anything — [MCP](https://modelcontextprotocol.io) server for MyToyota Europe, read-only by default.
 
 [![PyPI](https://img.shields.io/pypi/v/toyota-mcp)](https://pypi.org/project/toyota-mcp/)
 [![CI](https://github.com/zepgram/toyota-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/zepgram/toyota-mcp/actions/workflows/ci.yml)
@@ -124,10 +124,14 @@ Safety model:
   returns a preview and **sends nothing**; the agent is instructed to preview,
   get the user's agreement, then call with `confirm=true`.
 - Your MCP host still applies its own permission prompt for non-read-only tools.
-- The server **verifies** the outcome: after sending, it polls the state the
-  car reports (up to 60 s) and answers `verified`, `accepted` (Toyota took
-  the command, the car has not confirmed yet) or `failed` with Toyota's reason
-  (e.g. the car was moving).
+- Toyota's acknowledgement is checked: a command it refuses (return code
+  other than `000000`) comes back as `failed` and nothing is polled.
+- The outcome is **verified**: after sending, the server asks the car to
+  report (the same wake request the MyToyota app issues) and polls the
+  reported state for up to 40 s. `verified` means the car reported the new
+  state or a fresh report; `accepted` means Toyota took the command but no
+  change was reported yet — check again in a minute, and `toyota_get_health`
+  shows any message Toyota sent about it (e.g. the car was moving).
 - Commands are rate-limited to one every 10 s. Horn, lights and window
   commands are deliberately not exposed.
 
@@ -212,7 +216,7 @@ returning misleading nulls.
 ```bash
 git clone https://github.com/zepgram/toyota-mcp && cd toyota-mcp
 uv sync
-uv run pytest                       # 115 tests, no network
+uv run pytest                       # 121 tests, no network
 uv run ruff check && uv run ruff format --check
 uv run mypy src tests
 ```

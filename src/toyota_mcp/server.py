@@ -14,19 +14,16 @@ from toyota_mcp.gateway import AppContext, VehicleGateway
 from toyota_mcp.opendata import FrenchOpenData
 from toyota_mcp.tools import register_all
 
-INSTRUCTIONS = (
-    "Read-only access to a MyToyota Europe vehicle. Every response carries a "
-    "freshness block: the car uploads data when it parks, so cite "
-    "vehicle_reported_at or age_seconds when the user asks about current state. "
-    "Nothing here actuates the vehicle."
-)
-COMMANDS_INSTRUCTIONS = (
+_BASE_INSTRUCTIONS = (
     "Access to a MyToyota Europe vehicle. Every response carries a freshness block: "
     "the car uploads data when it parks, so cite vehicle_reported_at or age_seconds "
-    "when the user asks about current state. Remote commands (lock, unlock, climate) "
-    "are enabled: send one only when the user explicitly asked for it in this "
-    "conversation, never on your own initiative; call with confirm=false to preview, "
-    "then confirm=true once the user agreed."
+    "when the user asks about current state. "
+)
+INSTRUCTIONS = _BASE_INSTRUCTIONS + "Nothing here actuates the vehicle."
+COMMANDS_INSTRUCTIONS = _BASE_INSTRUCTIONS + (
+    "Remote commands (lock, unlock, climate) are enabled: send one only when the user "
+    "explicitly asked for it in this conversation, never on your own initiative; call "
+    "with confirm=false to preview, then confirm=true once the user agreed."
 )
 
 USAGE = (

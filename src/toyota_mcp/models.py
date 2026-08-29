@@ -51,8 +51,8 @@ CAPABILITIES_NOTE = (
     "(Toyota's two flag sets disagree on the same car) — only a live command proves support."
 )
 CLIMATE_NOTE = (
-    "Read-only view of remote pre-conditioning: current state plus the preset a remote start "
-    "would apply. Starting or stopping it is not available in this server."
+    "Remote pre-conditioning state plus the preset a remote start would apply. Starting or "
+    "stopping it needs the command tools (TOYOTA_REMOTE_COMMANDS=true)."
 )
 HYBRID_BREAKDOWN_NOTE = (
     "Toyota hybrid coaching split of the trip: electric-only driving, battery charging, "
@@ -726,8 +726,11 @@ def telemetry_reported_at(dashboard: Dashboard[Any]) -> datetime | None:
     return reported_at if isinstance(reported_at, datetime) else None
 
 
-def lock_state_of(lock_status: LockStatus) -> LockState:
-    return _overall_lock(_doors_report(lock_status))
+def lock_state_of(lock_status: LockStatus, doors_only: bool = False) -> LockState:
+    report = _doors_report(lock_status)
+    if doors_only:
+        report = report.model_copy(update={"trunk": DoorReport(state="unknown", lock="unknown")})
+    return _overall_lock(report)
 
 
 def _doors_report(lock_status: LockStatus) -> DoorsReport:

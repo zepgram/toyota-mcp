@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -14,7 +15,11 @@ from pytoyoda.controller import Controller
 from pytoyoda.exceptions import ToyotaLoginError
 from pytoyoda.models.climate import ClimateSettings, ClimateStatus
 from pytoyoda.models.dashboard import Dashboard
-from pytoyoda.models.endpoints.climate import V2RemoteClimateControlRequestModel
+from pytoyoda.models.endpoints.climate import (
+    HeatingOptionsModel,
+    SeatOptionsModel,
+    V2RemoteClimateControlRequestModel,
+)
 from pytoyoda.models.endpoints.command import CommandType
 from pytoyoda.models.endpoints.common import UnitValueModel
 from pytoyoda.models.location import Location
@@ -69,6 +74,11 @@ NO_CLIMATE_PRESET = (
     "The vehicle has no saved climate preset and no temperature was given — "
     "pass temperature_celsius explicitly."
 )
+CLIMATE_ACCEPTED_CODE = "000000"
+
+
+class CommandRejected(Exception):
+    pass
 
 
 @dataclass(frozen=True)
@@ -125,7 +135,7 @@ class VehicleGateway:
         settings: Settings,
         controller_class: type[Controller] = Controller,
         command_poll_interval: float = 5.0,
-        command_timeout: float = 60.0,
+        command_timeout: float = 40.0,
     ) -> None:
         self._settings = settings
         self._command_poll_interval = command_poll_interval
@@ -232,93 +242,105 @@ class VehicleGateway:
                 Freshness(fetched_at=self._last_refresh_at, age_seconds=0, source="live"),
             )
 
-    async def send_command(self, command: CommandType) -> datetime:
-        async with self._lock:
-            self._check_command_cooldown()
-            vehicle = await self._ensure_vehicle()
-            try:
-                await vehicle.post_command(command)
-            except ToolError:
-                raise
-            except Exception as exc:
-                raise self._translated(exc) from exc
-            return self._after_command("status")
+    async def send_door_command(self, command: CommandType) -> datetime:
+        return await self._command(
+            "status",
+            send=lambda vehicle: vehicle.post_command(command),
+            wake=lambda vehicle: vehicle.refresh_status(),
+        )
 
     async def start_climate(self, temperature_celsius: float | None) -> datetime:
-        async with self._lock:
-            self._check_command_cooldown()
-            vehicle = await self._ensure_vehicle()
-            try:
-                temperature = await _climate_temperature(vehicle, temperature_celsius)
-                await vehicle.set_climate(
-                    V2RemoteClimateControlRequestModel(command="start", temperature=temperature)
-                )
-            except ToolError:
-                raise
-            except Exception as exc:
-                raise self._translated(exc) from exc
-            return self._after_command("climate")
+        async def send(vehicle: Vehicle[Any]) -> object:
+            await vehicle.update(only=["climate_settings"])
+            settings = vehicle.climate_settings
+            if settings is None:
+                raise ToolError(NO_CLIMATE_REPORTED)
+            return await vehicle.set_climate(_climate_start_request(settings, temperature_celsius))
+
+        return await self._command(
+            "climate", send=send, wake=lambda vehicle: vehicle.refresh_climate_status()
+        )
 
     async def stop_climate(self) -> datetime:
-        async with self._lock:
-            self._check_command_cooldown()
-            vehicle = await self._ensure_vehicle()
-            try:
-                await vehicle.set_climate(V2RemoteClimateControlRequestModel(command="stop"))
-            except ToolError:
-                raise
-            except Exception as exc:
-                raise self._translated(exc) from exc
-            return self._after_command("climate")
+        async def send(vehicle: Vehicle[Any]) -> object:
+            return await vehicle.set_climate(V2RemoteClimateControlRequestModel(command="stop"))
+
+        return await self._command(
+            "climate", send=send, wake=lambda vehicle: vehicle.refresh_climate_status()
+        )
 
     async def wait_for_status(
         self, satisfied: Callable[[StatusBundle], bool]
-    ) -> tuple[StatusBundle, Freshness, bool]:
-        return await self._poll("status", ["status"], self._status_bundle, satisfied)
+    ) -> tuple[StatusBundle | None, Freshness | None, bool]:
+        return await self._wait_for("status", ["status"], self._status_bundle, satisfied)
 
     async def wait_for_climate(
         self, satisfied: Callable[[ClimateBundle], bool]
-    ) -> tuple[ClimateBundle, Freshness, bool]:
-        return await self._poll(
-            "climate", ["climate_status", "climate_settings"], _extract_climate, satisfied
-        )
-
-    async def remote_control_notification_since(self, since: datetime) -> Notification | None:
-        notifications, _ = await self._fetch_live(
-            "notifications", ["notifications"], _extract_notifications
-        )
-        candidates = [
-            notification
-            for notification in notifications
-            if notification.category == "RemoteControl"
-            and notification.date is not None
-            and notification.date >= since
-        ]
-        if not candidates:
-            return None
-        return max(candidates, key=lambda notification: cast(datetime, notification.date))
+    ) -> tuple[ClimateBundle | None, Freshness | None, bool]:
+        return await self._wait_for("climate", ["climate_status"], _extract_climate, satisfied)
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def _poll(
+    async def _command(
+        self,
+        key: str,
+        send: Callable[[Vehicle[Any]], Awaitable[object]],
+        wake: Callable[[Vehicle[Any]], Awaitable[object]],
+    ) -> datetime:
+        async with self._lock:
+            elapsed = time.monotonic() - self._last_command_at
+            if self._last_command_at and elapsed < COMMAND_COOLDOWN:
+                raise ToolError(
+                    f"Another command was sent {int(elapsed)}s ago — wait "
+                    f"{COMMAND_COOLDOWN - int(elapsed)}s before sending a new one."
+                )
+            self._check_cooldown()
+            vehicle = await self._ensure_vehicle()
+            sent_at = datetime.now(UTC)
+            try:
+                response = await send(vehicle)
+            except ToolError:
+                raise
+            except Exception as exc:
+                raise self._translated(exc) from exc
+            finally:
+                self._cache.drop(key)
+                self._last_command_at = time.monotonic()
+                self._last_refresh_at = None
+            rejection = _rejection(response)
+            if rejection is not None:
+                raise CommandRejected(rejection)
+            with contextlib.suppress(Exception):
+                await wake(vehicle)
+            return sent_at
+
+    async def _wait_for(
         self,
         key: str,
         endpoints: list[str],
         extract: Callable[[Vehicle[Any]], T],
         satisfied: Callable[[T], bool],
-    ) -> tuple[T, Freshness, bool]:
+    ) -> tuple[T | None, Freshness | None, bool]:
         deadline = time.monotonic() + self._command_timeout
+        latest: tuple[T, Freshness] | None = None
         while True:
-            value, freshness = await self._fetch_live(key, endpoints, extract)
-            if satisfied(value):
-                return value, freshness, True
-            if time.monotonic() >= deadline:
-                return value, freshness, False
+            try:
+                latest = await self._fetch(endpoints, extract)
+            except ToolError as exc:
+                logger.warning("verification read failed: %s", exc)
+            if latest is not None and satisfied(latest[0]):
+                self._cache.store(key, latest[0])
+                return latest[0], latest[1], True
+            if time.monotonic() + self._command_poll_interval > deadline:
+                break
             await asyncio.sleep(self._command_poll_interval)
+        if latest is None:
+            return None, None, False
+        return latest[0], latest[1], False
 
-    async def _fetch_live(
-        self, key: str, endpoints: list[str], extract: Callable[[Vehicle[Any]], T]
+    async def _fetch(
+        self, endpoints: list[str], extract: Callable[[Vehicle[Any]], T]
     ) -> tuple[T, Freshness]:
         async with self._lock:
             self._check_cooldown()
@@ -330,20 +352,7 @@ class VehicleGateway:
                 raise
             except Exception as exc:
                 raise self._translated(exc) from exc
-            return value, _freshness(self._cache.store(key, value), "live")
-
-    def _check_command_cooldown(self) -> None:
-        elapsed = time.monotonic() - self._last_command_at
-        if self._last_command_at and elapsed < COMMAND_COOLDOWN:
-            raise ToolError(
-                f"Another command was sent {int(elapsed)}s ago — wait "
-                f"{COMMAND_COOLDOWN - int(elapsed)}s before sending a new one."
-            )
-
-    def _after_command(self, key: str) -> datetime:
-        self._cache.drop(key)
-        self._last_command_at = time.monotonic()
-        return datetime.now(UTC)
+            return value, Freshness(fetched_at=datetime.now(UTC), age_seconds=0, source="live")
 
     async def _snapshot(
         self,
@@ -472,21 +481,56 @@ def vehicle_label(vehicle: Vehicle[Any]) -> str:
     return f"{alias} (…{(vehicle.vin or '????')[-4:]})"
 
 
-def _extract_notifications(vehicle: Vehicle[Any]) -> list[Notification]:
-    return list(vehicle.notifications or [])
+def _rejection(response: object) -> str | None:
+    return_code = getattr(getattr(response, "payload", None), "return_code", None)
+    if return_code is None or return_code == CLIMATE_ACCEPTED_CODE:
+        return None
+    return f"Toyota rejected the command (code {return_code}) — nothing was executed."
 
 
-async def _climate_temperature(
-    vehicle: Vehicle[Any], temperature_celsius: float | None
-) -> UnitValueModel:
+def _climate_start_request(
+    settings: ClimateSettings, temperature_celsius: float | None
+) -> V2RemoteClimateControlRequestModel:
+    preset = settings.temperature
     if temperature_celsius is not None:
-        return UnitValueModel(value=temperature_celsius, unit="C")
-    await vehicle.update(only=["climate_settings"])
-    settings = vehicle.climate_settings
-    preset = settings.temperature if settings else None
-    if preset is None or preset.value is None:
+        temperature = UnitValueModel(value=temperature_celsius, unit="C")
+    elif preset is not None and preset.value is not None:
+        temperature = UnitValueModel(value=preset.value, unit=preset.unit or "C")
+    else:
         raise ToolError(NO_CLIMATE_PRESET)
-    return UnitValueModel(value=preset.value, unit=preset.unit or "C")
+    heating = settings.heating_options
+    seats = settings.seat_options
+    return V2RemoteClimateControlRequestModel(
+        command="start",
+        temperature=temperature,
+        duration=int(settings.duration.total_seconds() // 60) if settings.duration else None,
+        heating_options=(
+            HeatingOptionsModel(
+                front_defroster=_switch(heating.front_defroster),
+                rear_defogger=_switch(heating.rear_defogger),
+                steering_heater=_switch(heating.steering_heater),
+            )
+            if heating
+            else None
+        ),
+        seat_options=(
+            SeatOptionsModel(
+                driver_seat=seats.driver_seat,
+                passenger_seat=seats.passenger_seat,
+                rear_driver_seat=seats.rear_driver_seat,
+                rear_passenger_seat=seats.rear_passenger_seat,
+            )
+            if seats
+            else None
+        ),
+        save_settings=False,
+    )
+
+
+def _switch(enabled: bool | None) -> str | None:
+    if enabled is None:
+        return None
+    return "on" if enabled else "off"
 
 
 def _extract_climate(vehicle: Vehicle[Any]) -> ClimateBundle:

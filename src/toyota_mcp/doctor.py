@@ -176,9 +176,14 @@ def _print_tool_table(vehicle: Vehicle[Any], settings: Settings) -> None:
         ),
         ("toyota_refresh_data", True, ""),
         (
-            "toyota_lock_doors / unlock_doors / start_climate / stop_climate",
+            "toyota_lock_doors / unlock_doors",
             settings.remote_commands,
             "set TOYOTA_REMOTE_COMMANDS=true (opt-in)",
+        ),
+        (
+            "toyota_start_climate / stop_climate",
+            settings.remote_commands and climate is not None and climate.temperature is not None,
+            "TOYOTA_REMOTE_COMMANDS=true and a remote-climate-enabled vehicle",
         ),
     ]
     for tool, available, reason in rows:

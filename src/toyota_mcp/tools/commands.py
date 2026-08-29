@@ -1,4 +1,5 @@
 import time
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Annotated
 
@@ -8,13 +9,18 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 from pytoyoda.models.endpoints.command import CommandType
 
-from toyota_mcp.gateway import AppContext, VehicleGateway
+from toyota_mcp.gateway import (
+    AppContext,
+    ClimateBundle,
+    CommandRejected,
+    StatusBundle,
+    VehicleGateway,
+)
 from toyota_mcp.models import (
     CONFIRMATION_NOTE,
     ClimateReport,
     CommandReport,
     LockState,
-    NotificationItem,
     StatusReport,
     lock_state_of,
 )
@@ -34,6 +40,11 @@ Confirm = Annotated[
         )
     ),
 ]
+UNVERIFIED_HINT = (
+    "Toyota accepted the command but the car has not reported a change within {seconds}s. "
+    "Check again with {read_tool} in a minute; toyota_get_health lists any message Toyota "
+    "sent about it."
+)
 
 
 def register(mcp: MCPServer) -> None:
@@ -41,7 +52,7 @@ def register(mcp: MCPServer) -> None:
     async def toyota_lock_doors(
         ctx: Context[AppContext], confirm: Confirm = False
     ) -> CommandReport:
-        """Lock all doors and the trunk, then verify against the state the car reports.
+        """Lock the doors, then verify against the state the car reports.
 
         Only when the user explicitly asked to lock the car. Call with
         confirm=false first when in doubt; the report says whether the car
@@ -53,7 +64,7 @@ def register(mcp: MCPServer) -> None:
     async def toyota_unlock_doors(
         ctx: Context[AppContext], confirm: Confirm = False
     ) -> CommandReport:
-        """Unlock all doors, then verify against the state the car reports.
+        """Unlock the doors, then verify against the state the car reports.
 
         Security-sensitive: only when the user explicitly asked to unlock the
         car in this conversation, never on your own initiative. Preview with
@@ -76,7 +87,7 @@ def register(mcp: MCPServer) -> None:
             ),
         ] = None,
     ) -> CommandReport:
-        """Start remote pre-conditioning (heating or cooling) for the preset duration.
+        """Start remote pre-conditioning with the saved preset (duration, defrosters, seats).
 
         On a hybrid this runs the engine — never start it in an enclosed
         space. Only when the user explicitly asked; preview with confirm=false
@@ -84,25 +95,15 @@ def register(mcp: MCPServer) -> None:
         the car reports.
         """
         gateway = ctx.request_context.lifespan_context.gateway
-        if not confirm:
-            bundle, freshness = await gateway.climate()
-            current = ClimateReport.from_climate(bundle.status, bundle.settings, freshness)
-            target = (
-                f"{temperature_celsius} °C"
-                if temperature_celsius is not None
-                else "the saved preset"
-            )
-            return CommandReport(
-                command="climate-start",
-                status="needs_confirmation",
-                detail=(
-                    f"Would start remote climate at {target} (currently {current.status}). "
-                    f"{CONFIRMATION_NOTE}"
-                ),
-                climate=current,
-            )
-        sent_at = await gateway.start_climate(temperature_celsius)
-        return await _climate_outcome(gateway, "climate-start", True, sent_at)
+        target = f"{temperature_celsius} °C" if temperature_celsius else "the saved preset"
+        return await _climate_command(
+            gateway,
+            "climate-start",
+            expected_on=True,
+            confirm=confirm,
+            preview=f"Would start remote climate at {target}",
+            send=lambda: gateway.start_climate(temperature_celsius),
+        )
 
     @mcp.tool(title="Stop remote climate", annotations=REVERSIBLE)
     async def toyota_stop_climate(
@@ -113,19 +114,14 @@ def register(mcp: MCPServer) -> None:
         Only when the user explicitly asked; preview with confirm=false when in doubt.
         """
         gateway = ctx.request_context.lifespan_context.gateway
-        if not confirm:
-            bundle, freshness = await gateway.climate()
-            current = ClimateReport.from_climate(bundle.status, bundle.settings, freshness)
-            return CommandReport(
-                command="climate-stop",
-                status="needs_confirmation",
-                detail=(
-                    f"Would stop remote climate (currently {current.status}). {CONFIRMATION_NOTE}"
-                ),
-                climate=current,
-            )
-        sent_at = await gateway.stop_climate()
-        return await _climate_outcome(gateway, "climate-stop", False, sent_at)
+        return await _climate_command(
+            gateway,
+            "climate-stop",
+            expected_on=False,
+            confirm=confirm,
+            preview="Would stop remote climate",
+            send=gateway.stop_climate,
+        )
 
 
 async def _door_command(
@@ -133,88 +129,116 @@ async def _door_command(
 ) -> CommandReport:
     gateway = ctx.request_context.lifespan_context.gateway
     name = str(command.value)
-    before_bundle, before_freshness = await gateway.status()
-    before = StatusReport.from_lock_status(
-        before_bundle.lock_status, before_bundle.extras, before_freshness
+    before, before_freshness = await gateway.status()
+    before_report = StatusReport.from_lock_status(
+        before.lock_status, before.extras, before_freshness
     )
     if not confirm:
         return CommandReport(
             command=name,
             status="needs_confirmation",
-            detail=(
-                f"Would send '{name}' to the car (currently {before.all_locked}). "
-                f"{CONFIRMATION_NOTE}"
-            ),
-            doors=before,
+            detail=f"Would send '{name}' (doors currently {before_report.all_locked}). "
+            f"{CONFIRMATION_NOTE}",
+            doors=before_report,
         )
-    sent_at = await gateway.send_command(command)
+    try:
+        await gateway.send_door_command(command)
+    except CommandRejected as exc:
+        return CommandReport(command=name, status="failed", detail=str(exc), doors=before_report)
     started = time.monotonic()
-    bundle, freshness, ok = await gateway.wait_for_status(
-        lambda current: lock_state_of(current.lock_status) == expected
-    )
-    after = StatusReport.from_lock_status(bundle.lock_status, bundle.extras, freshness)
+    after, freshness, verified = await gateway.wait_for_status(_doors_changed(before, expected))
     elapsed = round(time.monotonic() - started, 1)
-    if ok:
-        already = " (it already was)" if before.all_locked == expected else ""
-        return CommandReport(
-            command=name,
-            status="verified",
-            detail=f"The car reports its doors {expected}{already}.",
-            doors=after,
-            elapsed_seconds=elapsed,
-        )
-    return await _unverified(gateway, name, expected, sent_at, elapsed, doors=after)
-
-
-async def _climate_outcome(
-    gateway: VehicleGateway, name: str, expected_on: bool, sent_at: datetime
-) -> CommandReport:
-    started = time.monotonic()
-    bundle, freshness, ok = await gateway.wait_for_climate(
-        lambda current: current.status.is_on is expected_on
+    doors = (
+        StatusReport.from_lock_status(after.lock_status, after.extras, freshness)
+        if after is not None and freshness is not None
+        else None
     )
-    after = ClimateReport.from_climate(bundle.status, bundle.settings, freshness)
-    elapsed = round(time.monotonic() - started, 1)
-    if ok:
-        return CommandReport(
-            command=name,
-            status="verified",
-            detail=f"The car reports remote climate {after.status}.",
-            climate=after,
-            elapsed_seconds=elapsed,
-        )
-    expected = "running" if expected_on else "stopped"
-    return await _unverified(gateway, name, expected, sent_at, elapsed, climate=after)
-
-
-async def _unverified(
-    gateway: VehicleGateway,
-    name: str,
-    expected: str,
-    sent_at: datetime,
-    elapsed: float,
-    doors: StatusReport | None = None,
-    climate: ClimateReport | None = None,
-) -> CommandReport:
-    failure = await gateway.remote_control_notification_since(sent_at)
-    if failure is not None:
-        reason = NotificationItem.from_notification(failure).message or "no reason given"
-        return CommandReport(
-            command=name,
-            status="failed",
-            detail=f"Toyota reported: {reason}",
-            doors=doors,
-            climate=climate,
-            elapsed_seconds=elapsed,
-        )
+    if verified:
+        detail = f"The car reports its doors {expected}."
+    else:
+        detail = UNVERIFIED_HINT.format(seconds=int(elapsed), read_tool="toyota_get_status")
+        if lock_state_of(before.lock_status, doors_only=True) == expected:
+            detail = f"The doors were already reported {expected} before the command. {detail}"
     return CommandReport(
         command=name,
-        status="accepted",
-        detail=(
-            f"Toyota accepted '{name}' but the car has not reported '{expected}' within "
-            f"{int(elapsed)}s — check again in a minute."
-        ),
+        status="verified" if verified else "accepted",
+        detail=detail,
         doors=doors,
+        elapsed_seconds=elapsed,
+    )
+
+
+def _doors_changed(before: StatusBundle, expected: LockState) -> Callable[[StatusBundle], bool]:
+    before_state = lock_state_of(before.lock_status, doors_only=True)
+    before_at = before.lock_status.last_updated
+
+    def satisfied(after: StatusBundle) -> bool:
+        if lock_state_of(after.lock_status, doors_only=True) != expected:
+            return False
+        after_at = after.lock_status.last_updated
+        return before_state != expected or (
+            after_at is not None and before_at is not None and after_at > before_at
+        )
+
+    return satisfied
+
+
+async def _climate_command(
+    gateway: VehicleGateway,
+    name: str,
+    expected_on: bool,
+    confirm: bool,
+    preview: str,
+    send: Callable[[], Awaitable[datetime]],
+) -> CommandReport:
+    before, before_freshness = await gateway.climate()
+    before_report = ClimateReport.from_climate(before.status, before.settings, before_freshness)
+    if not confirm:
+        return CommandReport(
+            command=name,
+            status="needs_confirmation",
+            detail=f"{preview} (currently {before_report.status}). {CONFIRMATION_NOTE}",
+            climate=before_report,
+        )
+    try:
+        await send()
+    except CommandRejected as exc:
+        return CommandReport(command=name, status="failed", detail=str(exc), climate=before_report)
+    started = time.monotonic()
+    after, freshness, verified = await gateway.wait_for_climate(
+        _climate_changed(before, expected_on)
+    )
+    elapsed = round(time.monotonic() - started, 1)
+    climate = (
+        ClimateReport.from_climate(after.status, before.settings, freshness)
+        if after is not None and freshness is not None
+        else None
+    )
+    expected = "running" if expected_on else "stopped"
+    if verified:
+        detail = f"The car reports remote climate {climate.status if climate else expected}."
+    else:
+        detail = UNVERIFIED_HINT.format(seconds=int(elapsed), read_tool="toyota_get_climate")
+        if before.status.is_on is expected_on:
+            detail = f"Remote climate was already reported {expected} before the command. {detail}"
+    return CommandReport(
+        command=name,
+        status="verified" if verified else "accepted",
+        detail=detail,
         climate=climate,
         elapsed_seconds=elapsed,
     )
+
+
+def _climate_changed(before: ClimateBundle, expected_on: bool) -> Callable[[ClimateBundle], bool]:
+    before_at = before.status.updated_at
+
+    def satisfied(after: ClimateBundle) -> bool:
+        if after.status.is_on is not expected_on:
+            return False
+        after_at = after.status.updated_at
+        return before.status.is_on is not expected_on or (
+            after_at is not None and before_at is not None and after_at > before_at
+        )
+
+    return satisfied
