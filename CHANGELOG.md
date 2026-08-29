@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The package version is the git tag:
 tagging `vX.Y.Z` publishes `X.Y.Z` to PyPI and creates the GitHub release.
 
-## [Unreleased]
+## [0.1.0] — 2026-08-29
 
 ### Added
 - Read tools: vehicle info, status (doors, windows, locks, lights, rear-seat
