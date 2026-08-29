@@ -8,7 +8,7 @@ def test_parse_and_match_within_200_metres() -> None:
     assert places
     assert places.match(43.6047, 1.4442) == "home"
     assert places.match(43.6290, 1.3630) == "work"
-    assert places.match(47.95, 1.90) is None
+    assert places.match(43.70, 1.40) is None
 
 
 def test_empty_spec_matches_nothing() -> None:

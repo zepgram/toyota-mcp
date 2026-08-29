@@ -16,7 +16,7 @@ async def test_reverse_geocode_caches_by_rounded_position(
 
 async def test_reverse_geocode_fails_open(opendata: OpenData, opendata_stub: OpenDataStub) -> None:
     opendata_stub.status_code = 503
-    assert await opendata.reverse_geocode(47.9, 1.9) is None
+    assert await opendata.reverse_geocode(43.7, 1.4) is None
 
 
 async def test_fuel_stations_sorted_with_distance(
@@ -65,6 +65,6 @@ async def test_osm_provider_uses_nominatim_and_throttles(opendata_stub: OpenData
 async def test_osm_provider_has_no_fuel_prices(opendata_stub: OpenDataStub) -> None:
     opendata = OpenData("osm", transport=httpx.MockTransport(opendata_stub.handler))
     with pytest.raises(OpenDataUnavailable) as excinfo:
-        await opendata.fuel_stations(47.9, 1.9, 5, "e10", 3)
+        await opendata.fuel_stations(43.7, 1.4, 5, "e10", 3)
     assert "--addresses fr" in str(excinfo.value)
     assert opendata_stub.requests == []
