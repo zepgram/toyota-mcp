@@ -310,7 +310,7 @@ async def test_get_climate(server: MCPServer) -> None:
     assert content["preset"]["duration_minutes"] == 20.0
     assert content["preset"]["options"]["front_defroster"] is False
     assert content["preset"]["options"]["driver_seat"] == "off"
-    assert "cannot" in content["note"] or "not available" in content["note"]
+    assert "TOYOTA_REMOTE_COMMANDS" in content["note"]
 
 
 async def test_get_climate_not_supported(
