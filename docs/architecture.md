@@ -55,6 +55,10 @@ Dependency direction is strictly downward: tools → gateway/models/opendata/pla
 - **Storage**: the vehicle session goes to the OS credential store, falling back
   to a file (mode 600) when there is none — a container or a headless server.
   `TOYOTA_SESSION_FILE` overrides the location; OAuth grants always use a file.
+- **Onboarding**: a server starts with nothing configured. Over HTTP the OAuth
+  consent page performs the Toyota sign-in and the vehicle choice; on stdio the
+  same is done through the account tools. Signing in to Toyota is what proves
+  ownership of the deployment, and a server bound to one account refuses another.
 - **Authentication**: Toyota exposes no third-party OAuth client, so the only
   credentials are the account's own. `toyota-mcp login` performs the mobile
   client's authorization-code flow in the user's browser and keeps only the

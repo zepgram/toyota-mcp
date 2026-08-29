@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import re
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from pytoyoda.models.endpoints.vehicle_guid import VehicleGuidModel
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 OpenState = Literal["closed", "open", "unknown"]
 LockState = Literal["locked", "unlocked", "unknown"]
 Powertrain = Literal["full_hybrid", "plug_in_hybrid", "electric", "fuel_only", "unknown"]
+KNOWN_POWERTRAINS = ("full_hybrid", "plug_in_hybrid", "electric", "fuel_only")
 
 RETENTION_NOTE = "Toyota keeps roughly 12 months of trip history server-side; older trips are gone."
 LOCATION_NOTE = (
@@ -314,6 +315,101 @@ class EnergyReport(BaseModel):
             battery_note=battery_note,
             freshness=freshness.with_vehicle_time(telemetry_reported_at(dashboard)),
         )
+
+
+SIGN_IN_STEPS = (
+    "1. Open the link and sign in on Toyota's own page — the password never reaches this "
+    "server. 2. Toyota then redirects to an address the browser cannot open "
+    "(com.toyota.oneapp:/…) and shows an error: that is expected. 3. Copy that whole address "
+    "from the address bar and pass it to toyota_complete_sign_in."
+)
+
+
+class SignInStart(BaseModel):
+    sign_in_url: str = Field(description="Toyota's sign-in page; give this link to the user.")
+    instructions: str
+    next_tool: str
+
+    @classmethod
+    def create(cls, url: str) -> SignInStart:
+        return cls(sign_in_url=url, instructions=SIGN_IN_STEPS, next_tool="toyota_complete_sign_in")
+
+
+class VehicleSummary(BaseModel):
+    name: str = Field(description="Alias set in the MyToyota app, or 'unnamed'.")
+    vin_suffix: str = Field(description="Last four characters of the VIN; use it to select.")
+    powertrain: Powertrain
+    model: str | None
+    selected: bool
+
+    @classmethod
+    def create(cls, vehicle: Vehicle[Any], selected_vin: str | None) -> VehicleSummary:
+        record = getattr(vehicle, "_vehicle_info", None)
+        kind = vehicle.type if vehicle.type in KNOWN_POWERTRAINS else "unknown"
+        return cls(
+            name=(vehicle.alias if vehicle.alias != vehicle.vin else None) or "unnamed",
+            vin_suffix=(vehicle.vin or "????")[-4:],
+            powertrain=cast(Powertrain, kind),
+            model=getattr(record, "car_model_name", None),
+            selected=bool(vehicle.vin) and vehicle.vin == selected_vin,
+        )
+
+
+class VehicleListReport(BaseModel):
+    vehicles: list[VehicleSummary]
+    selected: str | None = Field(description="vin_suffix of the vehicle the tools act on.")
+    note: str | None = None
+
+    @classmethod
+    def create(cls, vehicles: list[Vehicle[Any]], selected_vin: str | None) -> VehicleListReport:
+        summaries = [VehicleSummary.create(vehicle, selected_vin) for vehicle in vehicles]
+        chosen = next((summary for summary in summaries if summary.selected), None)
+        note = None
+        if chosen is None and len(summaries) > 1:
+            note = "No vehicle is selected — call toyota_select_vehicle with a vin_suffix."
+        elif chosen is None and len(summaries) == 1:
+            note = "Only one vehicle on this account; every tool uses it."
+        return cls(vehicles=summaries, selected=chosen.vin_suffix if chosen else None, note=note)
+
+
+class VehicleChoice(BaseModel):
+    name: str
+    vin_suffix: str
+    powertrain: Powertrain
+    note: str
+
+    @classmethod
+    def create(cls, vehicle: Vehicle[Any]) -> VehicleChoice:
+        summary = VehicleSummary.create(vehicle, vehicle.vin)
+        return cls(
+            name=summary.name,
+            vin_suffix=summary.vin_suffix,
+            powertrain=summary.powertrain,
+            note="Every tool now acts on this vehicle, and will again after a restart.",
+        )
+
+
+class SignInReport(BaseModel):
+    account: str | None
+    vehicles: list[VehicleSummary]
+    session_stored_in: str
+    note: str
+
+    @classmethod
+    def create(
+        cls, account: str | None, vehicles: list[Vehicle[Any]], location: str
+    ) -> SignInReport:
+        summaries = [
+            VehicleSummary.create(vehicle, vehicles[0].vin if len(vehicles) == 1 else None)
+            for vehicle in vehicles
+        ]
+        if not summaries:
+            note = "Signed in, but this account has no vehicle — pair one in the MyToyota app."
+        elif len(summaries) == 1:
+            note = "Signed in. Every tool acts on this vehicle."
+        else:
+            note = "Signed in. Several vehicles: call toyota_select_vehicle to pick one."
+        return cls(account=account, vehicles=summaries, session_stored_in=location, note=note)
 
 
 class SubscriptionReport(BaseModel):

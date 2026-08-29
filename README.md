@@ -107,21 +107,20 @@ server, so a client connects the way it connects to Gmail or GitHub: paste the
 URL, press **Connect**, approve in the browser.
 
 ```bash
-toyota-mcp login                                    # once: the vehicle session
-toyota-mcp --http https://toyota.example.com        # then serve it
+toyota-mcp --http https://toyota.example.com
 ```
 
-It prints the URL to paste into your client and an **access code**:
+Nothing else to configure — **connecting is signing in to Toyota**:
 
-```
-Serving https://toyota.example.com/mcp — add that URL in your MCP client.
-Access code to approve a client: 8a4d-e7b8-b7b1
-```
+1. Paste `https://toyota.example.com/mcp` into your client and press Connect.
+2. The client registers itself and sends you to this server's page.
+3. You sign in on **Toyota's own page**, paste back the address it redirects to,
+   and pick which vehicle to use when the account has several.
+4. The client gets its token; the server keeps the Toyota refresh token.
 
-The client discovers the metadata, registers itself, and sends you to a consent
-page naming it; you type the access code once and it receives a token. There is
-no account and no user database — the access code is what proves you are the
-owner, and `--access-code` sets your own instead of a generated one.
+Signing in to the Toyota account *is* the proof that you own the deployment —
+there is no shared code and no user database. A server already connected to one
+account refuses a sign-in with a different one.
 
 Run it on a machine of yours (a home server, a Raspberry Pi), behind a
 TLS-terminating proxy: the server refuses a non-`https://` public URL other
@@ -133,10 +132,9 @@ and refresh silently.
 ### With Docker
 
 ```bash
-docker build -t toyota-mcp --build-arg VERSION=0.2.1 .
-docker run --rm -it -v toyota-mcp:/data toyota-mcp login          # once
+docker build -t toyota-mcp --build-arg VERSION=0.3.0 .
 docker run -d --name toyota-mcp -v toyota-mcp:/data -p 127.0.0.1:8787:8787 \
-  toyota-mcp --http https://toyota.example.com --host 0.0.0.0 --access-code "$CODE"
+  toyota-mcp --http https://toyota.example.com --host 0.0.0.0
 ```
 
 A container has no credential store, so the session and the grants live in
@@ -144,6 +142,12 @@ A container has no credential store, so the session and the grants live in
 `TOYOTA_SESSION_FILE` moves the session file elsewhere.
 
 ## Authentication
+
+Nothing has to be configured before the first use. A server with no account
+connected still starts, and says what to do: over HTTP the Connect flow signs
+you in, and on stdio the tools `toyota_sign_in` → `toyota_complete_sign_in` →
+`toyota_select_vehicle` do the same from the conversation. `toyota-mcp login`
+remains for a terminal.
 
 Toyota has no third-party API programme: there is no developer portal, no
 per-application token, and the mobile app signs in with your account password.
@@ -168,7 +172,7 @@ with MFA cannot use this path.
 |---|---|---|---|
 | `TOYOTA_USERNAME` | no | — | MyToyota account email — only for the password sign-in |
 | `TOYOTA_PASSWORD` | no | — | MyToyota account password — only for the password sign-in |
-| `TOYOTA_VIN` | no | — | Selects one vehicle when several share the account |
+| `TOYOTA_VIN` | no | — | Pins one vehicle, overriding the choice made at sign-in |
 | `TOYOTA_BRAND` | no | `T` | `T` Toyota, `L` Lexus |
 | `TOYOTA_USE_METRIC` | no | `true` | `false` switches to miles/gallons |
 
@@ -200,6 +204,8 @@ unless the server runs with `--read-only`.
 
 | Tool | Example question | Key fields |
 |---|---|---|
+| `toyota_sign_in` / `toyota_complete_sign_in` | *Connect my Toyota account* | the sign-in link, then the session — no password reaches the server |
+| `toyota_list_vehicles` / `toyota_select_vehicle` | *Which cars? Use the Yaris.* | every vehicle on the account, and which one the tools act on |
 | `toyota_get_vehicle_info` | *What car is this? Is the subscription active?* | model, year, plate, colour, first use, subscriptions, declared remote capabilities |
 | `toyota_get_energy` | *How much range is left?* | fuel %, range (km/mi), battery or an explicit "not applicable" note |
 | `toyota_get_charging` | *Is it charging? When is the next scheduled charge?* | plug-in battery %, charging status, EV range, time to full, schedules (PHEV / EV only) |

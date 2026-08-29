@@ -5,7 +5,6 @@ import os
 import secrets
 import time
 from dataclasses import dataclass, field
-from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -22,8 +21,7 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 CONSENT_PATH = "/consent"
 CODE_LIFETIME = 300
 ACCESS_TOKEN_LIFETIME = 3600
-PENDING_LIFETIME = 600
-WRONG_CODE_DELAY = 1.0
+PENDING_LIFETIME = 900
 SCOPE = "vehicle"
 
 
@@ -34,14 +32,6 @@ def state_file() -> Path:
     else:
         base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
     return base / "toyota-mcp" / "oauth.json"
-
-
-def generate_access_code() -> str:
-    return "-".join(secrets.token_hex(2) for _ in range(3))
-
-
-def _digest(value: str) -> str:
-    return sha256(value.encode()).hexdigest()
 
 
 @dataclass
@@ -95,20 +85,20 @@ class _Pending:
     client_id: str
     params: AuthorizationParams
     created_at: float
+    signed_in: bool = False
 
 
 class OwnerAuthorizationServer(
     OAuthAuthorizationServerProvider[AuthorizationCode, RefreshToken, AccessToken]
 ):
-    """Issues MCP access tokens to clients the owner approves with an access code.
+    """Issues MCP access tokens to whoever can sign in to the vehicle's Toyota account.
 
     Toyota has no third-party OAuth programme, so this server is its own
-    authorization server: it guards access to *this* deployment, while the
-    vehicle session it holds stays where it was saved.
+    authorization server — and signing in to Toyota is what proves ownership,
+    which is also how the server obtains the session it needs.
     """
 
-    def __init__(self, access_code: str, grants: Grants) -> None:
-        self._access_code = access_code
+    def __init__(self, grants: Grants) -> None:
         self._grants = grants
         self._pending: dict[str, _Pending] = {}
         self._codes: dict[str, AuthorizationCode] = {}
@@ -139,12 +129,19 @@ class OwnerAuthorizationServer(
         registered = self._grants.clients.get(pending.client_id) or {}
         return str(registered.get("client_name") or pending.client_id)
 
-    def approve(self, request_id: str, access_code: str) -> str | None:
-        """Check the owner's access code and return the client's redirect target."""
+    def mark_signed_in(self, request_id: str) -> None:
         pending = self._pending.get(request_id)
-        if pending is None:
-            return None
-        if not secrets.compare_digest(access_code.strip(), self._access_code):
+        if pending is not None:
+            pending.signed_in = True
+
+    def is_signed_in(self, request_id: str) -> bool:
+        pending = self._pending.get(request_id)
+        return bool(pending and pending.signed_in)
+
+    def approve(self, request_id: str) -> str | None:
+        """Return the client's redirect target once the Toyota sign-in is done."""
+        pending = self._pending.get(request_id)
+        if pending is None or not pending.signed_in:
             return None
         del self._pending[request_id]
         code = AuthorizationCode(
@@ -252,28 +249,61 @@ class OwnerAuthorizationServer(
         }
 
 
-CONSENT_PAGE = """<!doctype html>
-<title>Connect to your Toyota</title>
+PAGE = """<!doctype html>
+<title>Connect your Toyota</title>
 <style>
  body {{ font: 16px/1.5 system-ui, sans-serif; margin: 0; display: grid; place-items: center;
         min-height: 100vh; background: #f6f6f7; color: #1a1a1a }}
- form {{ background: #fff; padding: 2rem; border-radius: 12px; width: min(28rem, 90vw);
+ main {{ background: #fff; padding: 2rem; border-radius: 12px; width: min(32rem, 92vw);
          box-shadow: 0 1px 3px rgba(0,0,0,.12) }}
- h1 {{ font-size: 1.25rem; margin: 0 0 .5rem }}
- p {{ margin: 0 0 1.25rem; color: #555 }}
- input {{ width: 100%; padding: .6rem; font-size: 1rem; border: 1px solid #ccc;
-          border-radius: 8px; box-sizing: border-box }}
- button {{ margin-top: 1rem; width: 100%; padding: .7rem; font-size: 1rem; border: 0;
-           border-radius: 8px; background: #1a1a1a; color: #fff; cursor: pointer }}
+ h1 {{ font-size: 1.25rem; margin: 0 0 .25rem }}
+ p {{ margin: 0 0 1rem; color: #555 }}
+ ol {{ color: #555; padding-left: 1.2rem; margin: 0 0 1rem }}
+ li {{ margin-bottom: .4rem }}
+ input[type=text] {{ width: 100%; padding: .6rem; font-size: 1rem; border: 1px solid #ccc;
+                     border-radius: 8px; box-sizing: border-box }}
+ label {{ display: block; padding: .6rem; border: 1px solid #ddd; border-radius: 8px;
+          margin-bottom: .5rem; cursor: pointer }}
+ label:hover {{ border-color: #1a1a1a }}
+ .primary, button {{ display: block; text-align: center; margin-top: 1rem; width: 100%;
+            padding: .7rem; font-size: 1rem; border: 0; border-radius: 8px;
+            background: #1a1a1a; color: #fff; cursor: pointer; text-decoration: none }}
  .error {{ color: #b00020; margin: 0 0 1rem }}
+ small {{ color: #777 }}
 </style>
-<form method="post">
- <h1>Connect to your Toyota</h1>
- <p><strong>{client}</strong> is asking to read your vehicle and send remote commands.</p>
+<main>
+ <h1>{title}</h1>
+ <p>{intro}</p>
  {error}
- <input type="password" name="access_code" placeholder="Access code" autofocus
-        autocomplete="one-time-code" required>
- <button type="submit">Allow access</button>
-</form>
+ {body}
+</main>
 """
-CONSENT_ERROR = '<p class="error">{message}</p>'
+ERROR = '<p class="error">{message}</p>'
+
+SIGN_IN_BODY = """
+ <ol>
+  <li>Open Toyota's sign-in page and log in with your MyToyota account.</li>
+  <li>Toyota then sends the browser to an address it cannot open
+      (<code>com.toyota.oneapp:/…</code>) and shows an error — that is expected.</li>
+  <li>Copy that whole address and paste it below.</li>
+ </ol>
+ <a class="primary" href="{sign_in_url}" target="_blank" rel="noopener">Open Toyota sign-in</a>
+ <form method="post" style="margin-top:1rem">
+  <input type="text" name="redirect" placeholder="com.toyota.oneapp:/oauth2Callback?code=…"
+         autocomplete="off" required>
+  <button type="submit">Continue</button>
+ </form>
+ <p style="margin-top:1rem"><small>Your password is never sent to this server — only the
+ one-time code Toyota hands back.</small></p>
+"""
+
+VEHICLE_BODY = """
+ <form method="post">
+  {choices}
+  <button type="submit">Allow access</button>
+ </form>
+"""
+VEHICLE_CHOICE = """
+  <label><input type="radio" name="vin" value="{vin}" {checked} required>
+   <strong>{name}</strong> — {model} · …{suffix}</label>
+"""

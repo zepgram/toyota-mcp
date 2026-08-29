@@ -13,7 +13,7 @@ from pytoyoda.exceptions import ToyotaApiError, ToyotaLoginError
 from toyota_mcp.config import Settings
 from toyota_mcp.doctor import EXIT_API, EXIT_AUTH, EXIT_CONFIG, EXIT_NO_VEHICLE, EXIT_OK
 from toyota_mcp.session import (
-    NO_CREDENTIALS,
+    NOT_SIGNED_IN,
     SessionController,
     SessionStore,
     account_username,
@@ -70,7 +70,7 @@ def execute(
             print(f"CONFIG  {variable}: {error['msg']}")
         return EXIT_CONFIG
     if settings.password is None and SessionStore().load() is None:
-        print(f"CONFIG  {NO_CREDENTIALS}")
+        print(f"CONFIG  {NOT_SIGNED_IN}")
         return EXIT_CONFIG
     return asyncio.run(
         _probe(
