@@ -106,14 +106,12 @@ def test_store_round_trip_and_clear(store: SessionStore) -> None:
     assert store.clear() is False
 
 
-def test_store_ignores_corrupted_entries(
-    store: SessionStore, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store.save(Session(username=None, refresh_token=REFRESH))
-    monkeypatch.setattr(
-        "toyota_mcp.session.keyring.get_password", lambda *_: json.dumps({"nope": 1})
-    )
-    assert store.load() is None
+def test_store_ignores_corrupted_entries(tmp_path: Path) -> None:
+    path = tmp_path / "corrupt.json"
+    path.write_text(json.dumps({"nope": 1}))
+    assert SessionStore(file=path).load() is None
+    path.write_text("not json at all")
+    assert SessionStore(file=path).load() is None
 
 
 @pytest.mark.parametrize(
@@ -189,7 +187,7 @@ async def test_controller_signs_in_from_the_saved_session(store: SessionStore) -
     await controller.login()
 
     assert refreshed == [REFRESH]
-    assert store.load() == Session(username=None, refresh_token="rotated")
+    assert store.load() == Session(username="driver@example.com", refresh_token="rotated", vin=None)
 
 
 async def test_controller_without_session_or_password_says_what_to_do(store: SessionStore) -> None:
@@ -198,7 +196,7 @@ async def test_controller_without_session_or_password_says_what_to_do(store: Ses
             raise AssertionError("must not try")
 
     Fake.store = store
-    with pytest.raises(ToyotaLoginError, match="toyota-mcp login"):
+    with pytest.raises(ToyotaLoginError, match="toyota_sign_in"):
         await Fake("", "", brand="T").login()
 
 

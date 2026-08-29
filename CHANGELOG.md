@@ -5,6 +5,20 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The package version is the git tag:
 tagging `vX.Y.Z` publishes `X.Y.Z` to PyPI and creates the GitHub release.
 
+## [0.3.0] — 2026-08-29
+
+### Added
+- Connecting a remote server **is** the Toyota sign-in: the OAuth consent page
+  sends the owner to Toyota's own page and then lets them pick a vehicle, so a
+  fresh deployment needs no configuration, no pre-existing session and no
+  shared secret. Signing in to the account is the proof of ownership.
+- The same setup from a conversation, for stdio clients: `toyota_sign_in`,
+  `toyota_complete_sign_in`, `toyota_list_vehicles`, `toyota_select_vehicle`.
+  The chosen vehicle is remembered across restarts.
+
+### Removed
+- `--access-code`: the Toyota sign-in replaces it.
+
 ## [0.2.1] — 2026-08-29
 
 ### Fixed

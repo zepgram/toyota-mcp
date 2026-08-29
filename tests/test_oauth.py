@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import json
 import secrets
@@ -14,12 +15,13 @@ from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from pydantic import AnyHttpUrl
 
 from toyota_mcp.gateway import VehicleGateway
-from toyota_mcp.oauth import SCOPE, Grants, OwnerAuthorizationServer, generate_access_code
+from toyota_mcp.oauth import SCOPE, Grants, OwnerAuthorizationServer
 from toyota_mcp.server import create_server
+from toyota_mcp.session import Session
 
 PUBLIC_URL = "http://localhost:8787"
-ACCESS_CODE = "test-code"
 REDIRECT_URI = "http://localhost:9999/callback"
+TOYOTA_REDIRECT = "com.toyota.oneapp:/oauth2Callback?code=TOYOTA-CODE"
 
 
 @pytest.fixture
@@ -27,11 +29,19 @@ def grants(tmp_path: Path) -> Grants:
     return Grants.load(tmp_path / "oauth.json")
 
 
+@pytest.fixture(autouse=True)
+def toyota_sign_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_exchange(code: str, client: Any = None) -> Session:
+        return Session(username="driver@example.com", refresh_token="refresh-value")
+
+    monkeypatch.setattr("toyota_mcp.server.exchange", fake_exchange)
+
+
 @pytest.fixture
 def app(gateway: VehicleGateway, grants: Grants) -> Any:
     server = create_server(
         gateway,
-        authorization=OwnerAuthorizationServer(ACCESS_CODE, grants),
+        authorization=OwnerAuthorizationServer(grants),
         auth_settings=AuthSettings(
             issuer_url=AnyHttpUrl(PUBLIC_URL),
             resource_server_url=AnyHttpUrl(f"{PUBLIC_URL}/mcp"),
@@ -129,13 +139,15 @@ async def test_the_owner_approves_a_client_and_it_can_then_call_tools(
     page = await http.get(consent_url)
     assert page.status_code == 200
     assert "Claude" in page.text
-    assert "Access code" in page.text
+    assert "Open Toyota sign-in" in page.text
+    assert "b2c-login.toyota-europe.com" in page.text
+    assert "password is never sent to this server" in page.text
 
-    refused = await http.post(consent_url, data={"access_code": "not-the-code"})
+    refused = await http.post(consent_url, data={"redirect": "https://example.com/nope"})
     assert refused.status_code == 200
-    assert "not the one this server printed" in refused.text
+    assert "not the address Toyota redirected to" in refused.text
 
-    approved = await http.post(consent_url, data={"access_code": ACCESS_CODE})
+    approved = await http.post(consent_url, data={"redirect": TOYOTA_REDIRECT})
     assert approved.status_code == 302
     redirect = httpx.URL(approved.headers["location"])
     assert str(redirect).startswith(REDIRECT_URI)
@@ -192,7 +204,7 @@ async def test_an_authorization_code_cannot_be_spent_twice(http: httpx.AsyncClie
     verifier, challenge = _pkce()
     client_id = await _register(http)
     consent_url = await _authorize(http, client_id, challenge)
-    approved = await http.post(consent_url, data={"access_code": ACCESS_CODE})
+    approved = await http.post(consent_url, data={"redirect": TOYOTA_REDIRECT})
     code = httpx.URL(approved.headers["location"]).params["code"]
     body = {
         "grant_type": "authorization_code",
@@ -209,7 +221,7 @@ async def test_a_wrong_pkce_verifier_is_refused(http: httpx.AsyncClient) -> None
     _, challenge = _pkce()
     client_id = await _register(http)
     consent_url = await _authorize(http, client_id, challenge)
-    approved = await http.post(consent_url, data={"access_code": ACCESS_CODE})
+    approved = await http.post(consent_url, data={"redirect": TOYOTA_REDIRECT})
     response = await http.post(
         "/token",
         data={
@@ -235,7 +247,7 @@ async def test_grants_survive_a_restart_and_are_written_privately(
     verifier, challenge = _pkce()
     client_id = await _register(http)
     consent_url = await _authorize(http, client_id, challenge)
-    approved = await http.post(consent_url, data={"access_code": ACCESS_CODE})
+    approved = await http.post(consent_url, data={"redirect": TOYOTA_REDIRECT})
     await http.post(
         "/token",
         data={
@@ -253,7 +265,61 @@ async def test_grants_survive_a_restart_and_are_written_privately(
     assert json.loads(grants.path.read_text())["clients"]
 
 
-def test_generated_access_codes_are_unguessable() -> None:
-    codes = {generate_access_code() for _ in range(50)}
-    assert len(codes) == 50
-    assert all(len(code) == 14 and code.count("-") == 2 for code in codes)
+async def test_signing_in_with_another_toyota_account_is_refused(
+    http: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, isolated_session: Path
+) -> None:
+    isolated_session.write_text(
+        json.dumps({"username": "owner@example.com", "refresh_token": "r", "vin": None})
+    )
+    _, challenge = _pkce()
+    client_id = await _register(http)
+    consent_url = await _authorize(http, client_id, challenge)
+    response = await http.post(consent_url, data={"redirect": TOYOTA_REDIRECT})
+    assert response.status_code == 200
+    assert "already connected to another Toyota account" in response.text
+
+
+async def test_connecting_signs_in_to_toyota_then_lets_the_owner_pick_the_vehicle(
+    http: httpx.AsyncClient,
+    fake_controller_class: Any,
+    isolated_session: Path,
+) -> None:
+    second = copy.deepcopy(fake_controller_class.responses["/v2/vehicle/guid"]["payload"][0])
+    second["vin"] = "JTDZARBE0RJ000099"
+    second["nickName"] = "Yaris"
+    fake_controller_class.responses["/v2/vehicle/guid"]["payload"].append(second)
+
+    verifier, challenge = _pkce()
+    client_id = await _register(http)
+    consent_url = await _authorize(http, client_id, challenge)
+
+    signed_in = await http.post(consent_url, data={"redirect": TOYOTA_REDIRECT})
+    assert signed_in.status_code == 200
+    assert "Choose the vehicle" in signed_in.text
+    assert "Corolla" in signed_in.text and "Yaris" in signed_in.text
+    assert json.loads(isolated_session.read_text())["username"] == "driver@example.com"
+
+    approved = await http.post(consent_url, data={"vin": "JTDZARBE0RJ000099"})
+    assert approved.status_code == 302
+    assert json.loads(isolated_session.read_text())["vin"] == "JTDZARBE0RJ000099"
+
+    token = await http.post(
+        "/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": httpx.URL(approved.headers["location"]).params["code"],
+            "redirect_uri": REDIRECT_URI,
+            "client_id": client_id,
+            "code_verifier": verifier,
+        },
+    )
+    assert token.status_code == 200, token.text
+
+
+async def test_a_single_vehicle_account_skips_the_picker(http: httpx.AsyncClient) -> None:
+    _, challenge = _pkce()
+    client_id = await _register(http)
+    consent_url = await _authorize(http, client_id, challenge)
+    approved = await http.post(consent_url, data={"redirect": TOYOTA_REDIRECT})
+    assert approved.status_code == 302
+    assert httpx.URL(approved.headers["location"]).params["code"]

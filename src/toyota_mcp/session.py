@@ -27,9 +27,9 @@ EXPIRED = datetime.min.replace(tzinfo=UTC)
 
 # pytoyoda requires an email-shaped username even when a refresh token makes it unused.
 PLACEHOLDER_USERNAME = "session@toyota-mcp.invalid"
-NO_CREDENTIALS = (
-    "No saved session and no credentials. Run `toyota-mcp login` to sign in through your "
-    "browser (the password stays with Toyota), or set TOYOTA_USERNAME and TOYOTA_PASSWORD."
+NOT_SIGNED_IN = (
+    "This server is not connected to a Toyota account yet. Call toyota_sign_in to get the "
+    "link, and toyota_complete_sign_in with what Toyota redirects to."
 )
 
 
@@ -37,6 +37,7 @@ NO_CREDENTIALS = (
 class Session:
     username: str | None
     refresh_token: str
+    vin: str | None = None
 
 
 class SessionStore:
@@ -63,12 +64,22 @@ class SessionStore:
             return None
         try:
             data = json.loads(raw)
-            return Session(username=data.get("username"), refresh_token=data["refresh_token"])
+            return Session(
+                username=data.get("username"),
+                refresh_token=data["refresh_token"],
+                vin=data.get("vin"),
+            )
         except (ValueError, KeyError):
             return None
 
     def save(self, session: Session) -> None:
-        raw = json.dumps({"username": session.username, "refresh_token": session.refresh_token})
+        raw = json.dumps(
+            {
+                "username": session.username,
+                "refresh_token": session.refresh_token,
+                "vin": session.vin,
+            }
+        )
         if self._file is None:
             try:
                 keyring.set_password(self._service, self._account, raw)
@@ -141,15 +152,18 @@ class SessionController(Controller):
                 expiration=EXPIRED,
             )
         if self._token_info is None and not self._password:
-            raise ToyotaLoginError(NO_CREDENTIALS)
+            raise ToyotaLoginError(NOT_SIGNED_IN)
         await super().login()
         self._persist()
 
     def _persist(self) -> None:
         refresh_token = self._refresh_token
-        if not refresh_token or self.store.load() is None:
+        saved = self.store.load()
+        if not refresh_token or saved is None:
             return
-        self.store.save(Session(username=self._username or None, refresh_token=refresh_token))
+        self.store.save(
+            Session(username=saved.username, refresh_token=refresh_token, vin=saved.vin)
+        )
 
 
 def account_username(configured: str | None, store: SessionStore | None = None) -> str:

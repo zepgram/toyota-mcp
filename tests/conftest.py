@@ -199,6 +199,14 @@ def _apply_command(responses: dict[str, Any], path: str, body: dict[str, Any]) -
             window.update({"status": "close", "lastUpdateTimestamp": reported_at})
 
 
+@pytest.fixture(autouse=True)
+def isolated_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """No test may read or write the developer's real credential store."""
+    path = tmp_path / "session.json"
+    monkeypatch.setenv("TOYOTA_SESSION_FILE", str(path))
+    return path
+
+
 @pytest.fixture
 def fake_controller_class() -> type[FakeControllerBase]:
     return type(

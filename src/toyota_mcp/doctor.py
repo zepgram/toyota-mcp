@@ -15,7 +15,7 @@ from pytoyoda.models.vehicle import Vehicle
 from toyota_mcp.config import ServerOptions, Settings
 from toyota_mcp.gateway import vehicle_label
 from toyota_mcp.session import (
-    NO_CREDENTIALS,
+    NOT_SIGNED_IN,
     SessionController,
     SessionStore,
     account_username,
@@ -82,7 +82,7 @@ def run(dump: bool = False, options: ServerOptions | None = None) -> int:
     elif settings.password is not None:
         print("OK      signing in with TOYOTA_USERNAME / TOYOTA_PASSWORD")
     else:
-        print(f"CONFIG  {NO_CREDENTIALS}")
+        print(f"CONFIG  {NOT_SIGNED_IN}")
         return EXIT_CONFIG
     return asyncio.run(_diagnose(settings, dump, options))
 

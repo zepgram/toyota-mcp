@@ -1,6 +1,7 @@
 from mcp.server import MCPServer
 
 from toyota_mcp.tools import (
+    account,
     charging,
     climate,
     commands,
@@ -19,6 +20,7 @@ __all__ = ["READ_ONLY", "register_all"]
 
 
 def register_all(mcp: MCPServer, remote_commands: bool = False) -> None:
+    account.register(mcp)
     vehicle.register(mcp)
     status.register(mcp)
     energy.register(mcp)

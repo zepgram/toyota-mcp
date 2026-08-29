@@ -54,7 +54,7 @@ from toyota_mcp.models import (
 )
 from toyota_mcp.opendata import OpenData
 from toyota_mcp.places import Places
-from toyota_mcp.session import SessionController, account_username
+from toyota_mcp.session import Session, SessionController, SessionStore, account_username
 
 T = TypeVar("T")
 
@@ -174,6 +174,7 @@ class VehicleGateway:
         self._controller = holder["controller"]
         self._cache = SnapshotCache()
         self._lock = asyncio.Lock()
+        self._store = SessionStore()
         self._vehicle: Vehicle[Any] | None = None
         self._login_error: ToolError | None = None
         self._login_blocked_until = 0.0
@@ -483,21 +484,69 @@ class VehicleGateway:
         self._vehicle = self._select_vehicle(vehicles)
         return self._vehicle
 
+    async def vehicles(self) -> list[Vehicle[Any]]:
+        """Every vehicle on the account, whichever one is currently selected."""
+        async with self._lock:
+            self._check_cooldown()
+            try:
+                await self._client.login()
+                return [
+                    vehicle for vehicle in await self._client.get_vehicles() if vehicle is not None
+                ]
+            except Exception as exc:
+                raise self._translated(exc) from exc
+
+    async def select(self, vin: str) -> Vehicle[Any]:
+        """Remember which vehicle the tools act on, across restarts."""
+        vehicles = await self.vehicles()
+        chosen = next((vehicle for vehicle in vehicles if vehicle.vin == vin), None)
+        if chosen is None:
+            raise errors.vin_not_found(vin, [vehicle_label(vehicle) for vehicle in vehicles])
+        saved = self._store.load()
+        if saved is not None:
+            self._store.save(
+                Session(username=saved.username, refresh_token=saved.refresh_token, vin=vin)
+            )
+        async with self._lock:
+            self._vehicle = chosen
+            self._cache.clear()
+        return chosen
+
+    def reset(self) -> None:
+        """Forget the vehicle, the snapshots and any login failure after signing in."""
+        self._vehicle = None
+        self._login_error = None
+        self._login_blocked_until = 0.0
+        self._cache.clear()
+
+    def selected_vin(self) -> str | None:
+        if self._settings.vin:
+            return self._settings.vin
+        saved = self._store.load()
+        return saved.vin if saved else None
+
+    def _selected_vin(self) -> str | None:
+        if self._settings.vin:
+            return self._settings.vin
+        saved = self._store.load()
+        return saved.vin if saved else None
+
     def _select_vehicle(self, vehicles: list[Vehicle[Any]]) -> Vehicle[Any]:
         if not vehicles:
             raise ToolError(errors.NO_VEHICLES)
         available = [vehicle_label(vehicle) for vehicle in vehicles]
-        if self._settings.vin is None:
+        wanted = self._selected_vin()
+        if wanted is None:
             if len(vehicles) == 1:
                 return vehicles[0]
             raise ToolError(
-                "Multiple vehicles are attached to this account — set TOYOTA_VIN to pick one. "
-                f"Available vehicles: {', '.join(available)}."
+                "This account has several vehicles and none is selected — call "
+                f"toyota_select_vehicle. Available: {', '.join(available)}."
             )
         for vehicle in vehicles:
-            if vehicle.vin == self._settings.vin:
+            if vehicle.vin == wanted:
                 return vehicle
-        raise errors.vin_not_found(self._settings.vin, available)
+        raise errors.vin_not_found(wanted, available)
 
     def _check_cooldown(self) -> None:
         if self._login_error is None:
