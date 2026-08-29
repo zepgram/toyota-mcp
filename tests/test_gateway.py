@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
@@ -22,7 +22,7 @@ def _expire(gateway: VehicleGateway, key: str, seconds: float) -> None:
     assert snapshot is not None
     gateway._cache._entries[key] = Snapshot(
         value=snapshot.value,
-        fetched_at=datetime.now(timezone.utc) - timedelta(seconds=seconds),
+        fetched_at=datetime.now(UTC) - timedelta(seconds=seconds),
     )
 
 

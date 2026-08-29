@@ -22,7 +22,8 @@ client for Toyota's European Connected Services.
   Japan use entirely different systems).
 - The account must **not have MFA/2FA enabled** (unsupported by the underlying API).
 - The vehicle must appear in the MyToyota mobile app.
-- [`uv`](https://docs.astral.sh/uv/) for the zero-install `uvx` launcher.
+- Python 3.11+ and [`uv`](https://docs.astral.sh/uv/) for the zero-install `uvx` launcher
+  (`uvx` fetches a suitable Python by itself).
 
 > **Unofficial API.** Toyota can change or break this API at any time without
 > notice. All API access is isolated behind pytoyoda, which historically absorbs

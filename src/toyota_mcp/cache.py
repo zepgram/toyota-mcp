@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 TTL_STATUS = 300
 TTL_TELEMETRY = 300
@@ -15,7 +15,7 @@ class Snapshot:
     fetched_at: datetime
 
     def age_seconds(self, now: datetime | None = None) -> float:
-        current = now or datetime.now(timezone.utc)
+        current = now or datetime.now(UTC)
         return (current - self.fetched_at).total_seconds()
 
 
@@ -33,7 +33,7 @@ class SnapshotCache:
         return self._entries.get(key)
 
     def store(self, key: str, value: object) -> Snapshot:
-        snapshot = Snapshot(value=value, fetched_at=datetime.now(timezone.utc))
+        snapshot = Snapshot(value=value, fetched_at=datetime.now(UTC))
         self._entries[key] = snapshot
         return snapshot
 

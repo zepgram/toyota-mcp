@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from toyota_mcp.cache import Snapshot, SnapshotCache
 
@@ -8,7 +8,7 @@ def _age(cache: SnapshotCache, key: str, seconds: float) -> None:
     assert snapshot is not None
     cache._entries[key] = Snapshot(
         value=snapshot.value,
-        fetched_at=datetime.now(timezone.utc) - timedelta(seconds=seconds),
+        fetched_at=datetime.now(UTC) - timedelta(seconds=seconds),
     )
 
 
@@ -52,6 +52,6 @@ def test_clear() -> None:
 
 
 def test_age_seconds() -> None:
-    fetched = datetime.now(timezone.utc) - timedelta(seconds=120)
+    fetched = datetime.now(UTC) - timedelta(seconds=120)
     snapshot = Snapshot(value=None, fetched_at=fetched)
     assert 119 < snapshot.age_seconds() < 122

@@ -5,7 +5,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any, Literal, TypeVar, cast
 
 from mcp.server.mcpserver.exceptions import ToolError
@@ -140,7 +140,7 @@ class VehicleGateway:
     async def refresh(self) -> tuple[bool, str, Freshness]:
         async with self._lock:
             if self._last_refresh_at is not None:
-                elapsed = (datetime.now(timezone.utc) - self._last_refresh_at).total_seconds()
+                elapsed = (datetime.now(UTC) - self._last_refresh_at).total_seconds()
                 if elapsed < REFRESH_FLOOR:
                     note = (
                         f"Refresh skipped — data was already refreshed {int(elapsed)}s ago and "
@@ -161,7 +161,7 @@ class VehicleGateway:
                 self._cache.store("location", vehicle.location)
             if vehicle.lock_status is not None:
                 self._cache.store("status", vehicle.lock_status)
-            self._last_refresh_at = datetime.now(timezone.utc)
+            self._last_refresh_at = datetime.now(UTC)
             return (
                 True,
                 "Refreshed from Toyota's cloud.",
@@ -215,9 +215,7 @@ class VehicleGateway:
             except Exception as exc:
                 raise self._translated(exc) from exc
             logger.info("live call answered in %.1fs", time.monotonic() - started)
-            return value, Freshness(
-                fetched_at=datetime.now(timezone.utc), age_seconds=0, source="live"
-            )
+            return value, Freshness(fetched_at=datetime.now(UTC), age_seconds=0, source="live")
 
     async def _ensure_vehicle(self) -> Vehicle[Any]:
         if self._vehicle is not None:
@@ -273,7 +271,7 @@ class VehicleGateway:
             return _freshness(newest, "cache")
         return Freshness(
             fetched_at=refreshed_at,
-            age_seconds=round((datetime.now(timezone.utc) - refreshed_at).total_seconds(), 1),
+            age_seconds=round((datetime.now(UTC) - refreshed_at).total_seconds(), 1),
             source="cache",
             note=NO_SNAPSHOT_NOTE,
         )

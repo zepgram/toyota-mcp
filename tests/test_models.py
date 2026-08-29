@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -20,7 +20,7 @@ from toyota_mcp.models import (
 
 
 def _freshness() -> Freshness:
-    return Freshness(fetched_at=datetime.now(timezone.utc), age_seconds=0, source="live")
+    return Freshness(fetched_at=datetime.now(UTC), age_seconds=0, source="live")
 
 
 def _doors(*locks: str) -> DoorsReport:
@@ -98,8 +98,8 @@ def test_energy_phev_battery_populated() -> None:
 
 def _trip(**overrides: Any) -> Any:
     defaults: dict[str, Any] = {
-        "start_time": datetime(2026, 8, 28, 8, 0, tzinfo=timezone.utc),
-        "end_time": datetime(2026, 8, 28, 8, 30, tzinfo=timezone.utc),
+        "start_time": datetime(2026, 8, 28, 8, 0, tzinfo=UTC),
+        "end_time": datetime(2026, 8, 28, 8, 30, tzinfo=UTC),
         "duration": timedelta(minutes=30),
         "distance": 22.0,
         "fuel_consumed": 0.9,
@@ -135,8 +135,8 @@ def test_trip_report_imperial_units() -> None:
 
 
 def test_trips_report_orders_newest_first_and_slices() -> None:
-    older = _trip(start_time=datetime(2026, 8, 20, 8, 0, tzinfo=timezone.utc))
-    newer = _trip(start_time=datetime(2026, 8, 28, 8, 0, tzinfo=timezone.utc))
+    older = _trip(start_time=datetime(2026, 8, 20, 8, 0, tzinfo=UTC))
+    newer = _trip(start_time=datetime(2026, 8, 28, 8, 0, tzinfo=UTC))
     report = TripsReport.from_trips(
         [older, newer],
         window_from=date(2026, 8, 15),
@@ -147,7 +147,7 @@ def test_trips_report_orders_newest_first_and_slices() -> None:
     )
     assert report.returned_count == 1
     assert report.total_in_window == 2
-    assert report.trips[0].started_at == datetime(2026, 8, 28, 8, 0, tzinfo=timezone.utc)
+    assert report.trips[0].started_at == datetime(2026, 8, 28, 8, 0, tzinfo=UTC)
     assert report.note is not None
     assert "1 most recent of 2 trips" in report.note
 
