@@ -6,12 +6,12 @@
     "url": "https://github.com/zepgram/toyota-mcp",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.1.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "toyota-mcp",
-      "version": "0.2.0",
+      "version": "0.1.0",
       "transport": { "type": "stdio" },
       "environmentVariables": [
         { "name": "TOYOTA_USERNAME", "description": "MyToyota account email", "isRequired": true, "isSecret": false },

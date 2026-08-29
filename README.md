@@ -240,7 +240,7 @@ a provider. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
 ```bash
 git clone https://github.com/zepgram/toyota-mcp && cd toyota-mcp
-uv sync
+uv sync                             # version derives from the git tag (hatch-vcs)
 uv run pytest                       # 127 tests, no network
 uv run ruff check && uv run ruff format --check
 uv run mypy src tests
@@ -261,6 +261,16 @@ Every command is physical, so run it next to the car:
 ```bash
 uvx toyota-mcp probe headlight-on --watch lights
 uvx toyota-mcp probe find-vehicle --beeps 2
+```
+
+### Releasing
+
+The version is the git tag — nothing to edit. Tagging publishes the package
+(PyPI trusted publishing, `pypi` environment) and creates the GitHub release
+from the matching `CHANGELOG.md` section:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
 ```
 
 Debug interactively with the MCP Inspector:

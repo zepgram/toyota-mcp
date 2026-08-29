@@ -75,6 +75,16 @@ Probed with `toyota-mcp probe` (server-side answers). Toyota's accepted strings 
 | `/v1/global/remote/electric/command` `CHARGE_NOW` (`toyota_charge_now`) | not applicable (full hybrid) | **untested** — shape from pytoyoda; reports welcome |
 | `/v1/global/remote/electric/status` (`toyota_get_charging`) | not applicable | **untested** — parsed by pytoyoda's model, fixture from its sample payload |
 
+## Versioning and release
+
+The package version comes from the git tag (`hatchling` + `hatch-vcs`); a
+checkout without a tag builds `0.1.devN+g<sha>`. Pushing `vX.Y.Z` runs
+`.github/workflows/release.yml`: build, assert the built version equals the
+tag, publish to PyPI through trusted publishing, then create the GitHub release
+with the `[X.Y.Z]` section of `CHANGELOG.md` and the distributions attached.
+`server.json` (MCP registry manifest) carries the same version and is updated
+by hand in the release commit.
+
 ## Backlog (deliberately not built)
 
 - Charging schedules as commands (`RESERVE_CHARGE`, `SET_CHARGING_TIME`): the

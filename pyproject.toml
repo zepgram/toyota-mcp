@@ -1,6 +1,6 @@
 [project]
 name = "toyota-mcp"
-version = "0.2.0"
+dynamic = ["version"]
 description = "MCP server for MyToyota Europe — ask your Toyota anything (read-only by default)"
 readme = "README.md"
 license = "MIT"
@@ -37,8 +37,14 @@ Issues = "https://github.com/zepgram/toyota-mcp/issues"
 toyota-mcp = "toyota_mcp.server:main"
 
 [build-system]
-requires = ["uv_build>=0.9.28,<0.13.0"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.27", "hatch-vcs>=0.4"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/toyota_mcp"]
 
 [dependency-groups]
 dev = [
