@@ -37,7 +37,7 @@ Issues = "https://github.com/zepgram/toyota-mcp/issues"
 toyota-mcp = "toyota_mcp.server:main"
 
 [build-system]
-requires = ["uv_build>=0.9.28,<0.10.0"]
+requires = ["uv_build>=0.9.28,<0.13.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
