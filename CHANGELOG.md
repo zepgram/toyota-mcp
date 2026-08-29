@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The package version is the git tag:
 tagging `vX.Y.Z` publishes `X.Y.Z` to PyPI and creates the GitHub release.
 
+## [0.2.1] — 2026-08-29
+
+### Fixed
+- The saved session falls back to a file (mode 600) when the machine has no
+  credential store, so the server can run in a container or on a headless
+  host; `TOYOTA_SESSION_FILE` chooses where. A `Dockerfile` ships with the
+  project.
+
 ## [0.2.0] — 2026-08-29
 
 ### Added

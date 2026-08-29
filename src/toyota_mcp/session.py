@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import webbrowser
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -38,17 +40,25 @@ class Session:
 
 
 class SessionStore:
-    """The saved Toyota session, in the operating system's credential store."""
+    """The saved Toyota session.
 
-    def __init__(self, service: str = SERVICE, account: str = ACCOUNT) -> None:
+    Kept in the operating system's credential store, or in a file when there is
+    none — a container or a headless server has no keyring.
+    """
+
+    def __init__(
+        self, service: str = SERVICE, account: str = ACCOUNT, file: Path | None = None
+    ) -> None:
         self._service = service
         self._account = account
+        self._file = file or _configured_file()
+
+    @property
+    def location(self) -> str:
+        return str(self._file) if self._file else f"the {self._service} credential store"
 
     def load(self) -> Session | None:
-        try:
-            raw = keyring.get_password(self._service, self._account)
-        except KeyringError:
-            return None
+        raw = self._read_file() if self._file else self._read_keyring()
         if not raw:
             return None
         try:
@@ -58,18 +68,59 @@ class SessionStore:
             return None
 
     def save(self, session: Session) -> None:
-        keyring.set_password(
-            self._service,
-            self._account,
-            json.dumps({"username": session.username, "refresh_token": session.refresh_token}),
-        )
+        raw = json.dumps({"username": session.username, "refresh_token": session.refresh_token})
+        if self._file is None:
+            try:
+                keyring.set_password(self._service, self._account, raw)
+                return
+            except KeyringError:
+                self._file = session_file()
+        self._write_file(raw)
 
     def clear(self) -> bool:
+        if self._file is not None:
+            try:
+                self._file.unlink()
+            except OSError:
+                return False
+            return True
         try:
             keyring.delete_password(self._service, self._account)
         except KeyringError:
             return False
         return True
+
+    def _read_keyring(self) -> str | None:
+        try:
+            return keyring.get_password(self._service, self._account)
+        except KeyringError:
+            self._file = session_file()
+            return self._read_file()
+
+    def _read_file(self) -> str | None:
+        try:
+            return self._file.read_text() if self._file else None
+        except OSError:
+            return None
+
+    def _write_file(self, raw: str) -> None:
+        assert self._file is not None
+        self._file.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self._file.with_suffix(".tmp")
+        temporary.write_text(raw)
+        temporary.chmod(0o600)
+        temporary.replace(self._file)
+
+
+def session_file() -> Path:
+    from toyota_mcp.oauth import state_file
+
+    return state_file().with_name("session.json")
+
+
+def _configured_file() -> Path | None:
+    configured = os.environ.get("TOYOTA_SESSION_FILE")
+    return Path(configured) if configured else None
 
 
 class SessionController(Controller):
