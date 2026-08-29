@@ -56,9 +56,13 @@ Dependency direction is strictly downward: tools → gateway/models/opendata/pla
   to a file (mode 600) when there is none — a container or a headless server.
   `TOYOTA_SESSION_FILE` overrides the location; OAuth grants always use a file.
 - **Onboarding**: a server starts with nothing configured. Over HTTP the OAuth
-  consent page performs the Toyota sign-in and the vehicle choice; on stdio the
-  same is done through the account tools. Signing in to Toyota is what proves
-  ownership of the deployment, and a server bound to one account refuses another.
+  consent page signs the owner in to Toyota and offers the vehicle choice;
+  otherwise `toyota-mcp login` does, and the account tools switch vehicles.
+  Signing in to Toyota is what proves ownership of the deployment, and a server
+  bound to one account refuses another. Toyota's web login redirects to a mobile
+  deep link a browser cannot follow, so credentials are posted server-side and
+  only the refresh token is kept; `session.sign_in` clears pytoyoda's per-username
+  token cache first, or a wrong password would pass.
 - **Authentication**: Toyota exposes no third-party OAuth client, so the only
   credentials are the account's own. `toyota-mcp login` performs the mobile
   client's authorization-code flow in the user's browser and keeps only the

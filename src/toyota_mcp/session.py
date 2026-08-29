@@ -1,35 +1,26 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-import webbrowser
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
-from urllib.parse import parse_qs, urlparse
 
-import httpx
-import jwt
 import keyring
 from keyring.errors import KeyringError
-from pytoyoda.const import ACCESS_TOKEN_URL, AUTHORIZE_URL
 from pytoyoda.controller import Controller, TokenInfo
 from pytoyoda.exceptions import ToyotaLoginError
 
 SERVICE = "toyota-mcp"
 ACCOUNT = "session"
-CLIENT_AUTHORIZATION = "basic b25lYXBwOm9uZWFwcA=="
-CLIENT_ID = "oneapp"
-REDIRECT_URI = "com.toyota.oneapp:/oauth2Callback"
-CODE_VERIFIER = "plain"
 EXPIRED = datetime.min.replace(tzinfo=UTC)
 
 # pytoyoda requires an email-shaped username even when a refresh token makes it unused.
 PLACEHOLDER_USERNAME = "session@toyota-mcp.invalid"
 NOT_SIGNED_IN = (
-    "This server is not connected to a Toyota account yet. Call toyota_sign_in to get the "
-    "link, and toyota_complete_sign_in with what Toyota redirects to."
+    "This server is not connected to a Toyota account yet. Over HTTP, connecting a client "
+    "signs in; otherwise run `toyota-mcp login`."
 )
 
 
@@ -175,80 +166,25 @@ def account_username(configured: str | None, store: SessionStore | None = None) 
     return PLACEHOLDER_USERNAME
 
 
-def authorize_url() -> str:
-    return str(AUTHORIZE_URL)
+async def sign_in(username: str, password: str, brand: str = "T") -> Session:
+    """Authenticate with Toyota and keep only the refresh token it hands back.
 
-
-def open_browser(url: str) -> bool:
+    Toyota's web login ends on a mobile deep link a browser cannot follow — a
+    phone opens the MyToyota app instead — so the credentials are posted to
+    Toyota from here. The password is never written anywhere.
+    """
+    if not username.strip() or not password:
+        raise ToyotaLoginError("Both the MyToyota email address and the password are needed.")
+    controller = Controller(username.strip(), password, brand=brand)
+    # pytoyoda caches tokens per username on the class: without this, a wrong password
+    # would silently succeed whenever that account already authenticated in this process.
+    controller._token_info = None
     try:
-        return webbrowser.open(url)
-    except webbrowser.Error:
-        return False
-
-
-def authorization_code(pasted: str) -> str:
-    """Read the code out of the redirect the browser could not follow."""
-    candidate = pasted.strip().strip("\"'")
-    if not candidate:
-        raise ValueError("nothing pasted")
-    if "code=" in candidate:
-        query = parse_qs(urlparse(candidate).query) or parse_qs(candidate.split("?", 1)[-1])
-        codes = query.get("code")
-        if not codes or not codes[0]:
-            raise ValueError("that URL carries no authorization code")
-        return codes[0]
-    if "://" in candidate or candidate.startswith("com.toyota"):
-        raise ValueError("that URL carries no authorization code")
-    return candidate
-
-
-async def exchange(code: str, client: httpx.AsyncClient | None = None) -> Session:
-    owned = client is None
-    http = client or httpx.AsyncClient(timeout=httpx.Timeout(30.0))
-    try:
-        response = await http.post(
-            str(ACCESS_TOKEN_URL),
-            headers={"authorization": CLIENT_AUTHORIZATION},
-            data={
-                "client_id": CLIENT_ID,
-                "code": code,
-                "redirect_uri": REDIRECT_URI,
-                "grant_type": "authorization_code",
-                "code_verifier": CODE_VERIFIER,
-            },
-        )
-    except httpx.HTTPError as exc:
-        raise ToyotaLoginError(f"Could not reach Toyota's token endpoint: {exc}") from exc
+        await controller.login()
+        refresh_token = controller._refresh_token
     finally:
-        if owned:
-            await http.aclose()
-    if response.status_code != httpx.codes.OK:
-        raise ToyotaLoginError(
-            f"Toyota rejected the authorization code ({response.status_code}). "
-            "Codes are single-use and short-lived — start `toyota-mcp login` again."
-        )
-    payload = response.json()
-    if "refresh_token" not in payload:
-        raise ToyotaLoginError("Toyota's answer carried no refresh token.")
-    return Session(
-        username=_username_from(payload.get("id_token")), refresh_token=payload["refresh_token"]
-    )
-
-
-def _username_from(id_token: str | None) -> str | None:
-    if not id_token:
-        return None
-    try:
-        claims: dict[str, Any] = jwt.decode(
-            id_token,
-            algorithms=["RS256"],
-            options={"verify_signature": False},
-            audience="oneappsdkclient",
-        )
-    except jwt.PyJWTError:
-        return None
-    for claim in ("email", "preferred_username", "sub"):
-        value = claims.get(claim)
-        if isinstance(value, str) and value:
-            return value
-    return None
+        with contextlib.suppress(Exception):
+            await controller.aclose()
+    if not refresh_token:
+        raise ToyotaLoginError("Toyota accepted the sign-in but returned no refresh token.")
+    return Session(username=username.strip(), refresh_token=refresh_token)

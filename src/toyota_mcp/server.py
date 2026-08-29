@@ -32,20 +32,14 @@ from toyota_mcp.oauth import (
 )
 from toyota_mcp.opendata import OpenData
 from toyota_mcp.places import Places
-from toyota_mcp.session import (
-    Session,
-    SessionStore,
-    authorization_code,
-    authorize_url,
-    exchange,
-)
+from toyota_mcp.session import Session, SessionStore, sign_in
 from toyota_mcp.tools import register_all
 
 _BASE_INSTRUCTIONS = (
     "Access to a MyToyota or MyLexus Europe vehicle. Setup happens here, in the "
-    "conversation: with no account connected, call toyota_sign_in, give the user the link, "
-    "then toyota_complete_sign_in with the address Toyota redirected them to; when the "
-    "account holds several vehicles, toyota_select_vehicle picks one and it is remembered. "
+    "Connecting the server over HTTP signs the owner in to Toyota; otherwise the account is "
+    "connected with `toyota-mcp login`. When it holds several vehicles, toyota_select_vehicle "
+    "picks one and it is remembered. "
     "Every response carries a freshness block: the car uploads data when it parks, so cite "
     "vehicle_reported_at or age_seconds when the user asks about current state. "
 )
@@ -105,7 +99,12 @@ def register_consent(
         error = ""
         if request.method == "POST" and not authorization.is_signed_in(request_id):
             form = await request.form()
-            error = await _sign_in(authorization, request_id, str(form.get("redirect", "")))
+            error = await _sign_in(
+                authorization,
+                request_id,
+                str(form.get("username", "")),
+                str(form.get("password", "")),
+            )
         elif request.method == "POST":
             form = await request.form()
             chosen = str(form.get("vin", ""))
@@ -122,8 +121,9 @@ def register_consent(
         if not authorization.is_signed_in(request_id):
             return _page(
                 "Connect your Toyota",
-                f"{escape(client)} is asking to read your vehicle and send remote commands.",
-                SIGN_IN_BODY.format(sign_in_url=escape(authorize_url())),
+                f"{escape(client)} is asking to read your vehicle and send remote commands. "
+                "Sign in with the MyToyota account the car is paired to.",
+                SIGN_IN_BODY,
                 error=error,
             )
         vehicles = await gateway.vehicles()
@@ -139,15 +139,18 @@ def register_consent(
         )
 
 
-async def _sign_in(authorization: OwnerAuthorizationServer, request_id: str, redirect: str) -> str:
+async def _sign_in(
+    authorization: OwnerAuthorizationServer, request_id: str, username: str, password: str
+) -> str:
     try:
-        code = authorization_code(redirect)
-    except ValueError as exc:
-        return ERROR.format(message=f"That is not the address Toyota redirected to ({exc}).")
-    try:
-        session = await exchange(code)
-    except ToyotaLoginError as exc:
-        return ERROR.format(message=str(exc))
+        session = await sign_in(username, password)
+    except ToyotaLoginError:
+        return ERROR.format(
+            message=(
+                "Toyota refused those credentials. Check the email and password the MyToyota "
+                "app uses; accounts with two-factor authentication cannot be used."
+            )
+        )
     store = SessionStore()
     known = store.load()
     if known is not None and known.username and session.username != known.username:
@@ -228,7 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
     remote.add_argument("--port", type=int, default=8787, help="port to bind (default 8787)")
     commands = parser.add_subparsers(dest="subcommand", metavar="{login,logout,doctor,probe}")
     commands.add_parser(
-        "login", help="sign in through your browser and save the session (no password stored)"
+        "login", help="sign in to Toyota and save the session (the password is not stored)"
     )
     commands.add_parser("logout", help="forget the saved session")
     doctor = commands.add_parser(

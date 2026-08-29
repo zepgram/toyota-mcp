@@ -260,8 +260,8 @@ PAGE = """<!doctype html>
  p {{ margin: 0 0 1rem; color: #555 }}
  ol {{ color: #555; padding-left: 1.2rem; margin: 0 0 1rem }}
  li {{ margin-bottom: .4rem }}
- input[type=text] {{ width: 100%; padding: .6rem; font-size: 1rem; border: 1px solid #ccc;
-                     border-radius: 8px; box-sizing: border-box }}
+ input[type=text], input[type=email], input[type=password] {{ width: 100%; padding: .6rem;
+      font-size: 1rem; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box }}
  label {{ display: block; padding: .6rem; border: 1px solid #ddd; border-radius: 8px;
           margin-bottom: .5rem; cursor: pointer }}
  label:hover {{ border-color: #1a1a1a }}
@@ -281,20 +281,16 @@ PAGE = """<!doctype html>
 ERROR = '<p class="error">{message}</p>'
 
 SIGN_IN_BODY = """
- <ol>
-  <li>Open Toyota's sign-in page and log in with your MyToyota account.</li>
-  <li>Toyota then sends the browser to an address it cannot open
-      (<code>com.toyota.oneapp:/…</code>) and shows an error — that is expected.</li>
-  <li>Copy that whole address and paste it below.</li>
- </ol>
- <a class="primary" href="{sign_in_url}" target="_blank" rel="noopener">Open Toyota sign-in</a>
- <form method="post" style="margin-top:1rem">
-  <input type="text" name="redirect" placeholder="com.toyota.oneapp:/oauth2Callback?code=…"
-         autocomplete="off" required>
-  <button type="submit">Continue</button>
+ <form method="post">
+  <input type="email" name="username" placeholder="MyToyota email address"
+         autocomplete="username" autofocus required>
+  <input type="password" name="password" placeholder="MyToyota password"
+         autocomplete="current-password" required style="margin-top:.5rem">
+  <button type="submit">Sign in</button>
  </form>
- <p style="margin-top:1rem"><small>Your password is never sent to this server — only the
- one-time code Toyota hands back.</small></p>
+ <p style="margin-top:1rem"><small>Your credentials go straight to Toyota and are never
+ written down: this server keeps only the session token Toyota returns. Accounts with
+ two-factor authentication are not supported by Toyota's vehicle API.</small></p>
 """
 
 VEHICLE_BODY = """

@@ -5,7 +5,6 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import httpx
 import jwt
 import pytest
 from keyring.errors import NoKeyringError
@@ -13,14 +12,7 @@ from pytoyoda.controller import TokenInfo
 from pytoyoda.exceptions import ToyotaLoginError
 
 from toyota_mcp import login
-from toyota_mcp.session import (
-    EXPIRED,
-    Session,
-    SessionController,
-    SessionStore,
-    authorization_code,
-    exchange,
-)
+from toyota_mcp.session import EXPIRED, Session, SessionController, SessionStore, sign_in
 
 REFRESH = "refresh-token-value"
 
@@ -114,58 +106,72 @@ def test_store_ignores_corrupted_entries(tmp_path: Path) -> None:
     assert SessionStore(file=path).load() is None
 
 
-@pytest.mark.parametrize(
-    ("pasted", "expected"),
-    [
-        ("com.toyota.oneapp:/oauth2Callback?code=ABC&iss=x", "ABC"),
-        ("  ABC  ", "ABC"),
-        ('"com.toyota.oneapp:/oauth2Callback?code=ABC"', "ABC"),
-    ],
-)
-def test_authorization_code_accepts_url_or_bare_code(pasted: str, expected: str) -> None:
-    assert authorization_code(pasted) == expected
+async def test_sign_in_keeps_only_the_refresh_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, str] = {}
 
+    class FakeController:
+        def __init__(self, username: str, password: str, brand: str = "T") -> None:
+            seen["username"], seen["password"], seen["brand"] = username, password, brand
+            self._refresh_token = REFRESH
 
-@pytest.mark.parametrize("pasted", ["", "   ", "com.toyota.oneapp:/oauth2Callback?error=denied"])
-def test_authorization_code_rejects_useless_input(pasted: str) -> None:
-    with pytest.raises(ValueError, match=r"code|nothing"):
-        authorization_code(pasted)
+        async def login(self) -> None:
+            return None
 
+        async def aclose(self) -> None:
+            return None
 
-async def test_exchange_returns_the_session_with_the_account_email() -> None:
-    seen: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen["headers"] = dict(request.headers)
-        seen["body"] = dict(httpx.QueryParams(request.content.decode()))
-        return httpx.Response(
-            200,
-            json={
-                "access_token": "a",
-                "refresh_token": REFRESH,
-                "expires_in": 3600,
-                "id_token": _id_token(email="driver@example.com"),
-            },
-        )
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        session = await exchange("THE-CODE", client)
-
+    monkeypatch.setattr("toyota_mcp.session.Controller", FakeController)
+    session = await sign_in("  driver@example.com  ", "hunter2")
     assert session == Session(username="driver@example.com", refresh_token=REFRESH)
-    assert seen["body"]["code"] == "THE-CODE"
-    assert seen["body"]["grant_type"] == "authorization_code"
-    assert seen["body"]["code_verifier"] == "plain"
-    assert seen["headers"]["authorization"].startswith("basic ")
+    assert seen == {"username": "driver@example.com", "password": "hunter2", "brand": "T"}
 
 
-async def test_exchange_reports_a_spent_code() -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(
-            lambda _: httpx.Response(400, json={"error": "invalid_grant"})
-        )
-    ) as client:
-        with pytest.raises(ToyotaLoginError, match="single-use"):
-            await exchange("STALE", client)
+@pytest.mark.parametrize(("username", "password"), [("", "pw"), ("a@b.c", ""), ("   ", "pw")])
+async def test_sign_in_needs_both_fields(username: str, password: str) -> None:
+    with pytest.raises(ToyotaLoginError, match="email address and the password"):
+        await sign_in(username, password)
+
+
+async def test_sign_in_never_reuses_a_cached_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A wrong password must fail even when that account already signed in in this process."""
+    attempted: list[str] = []
+
+    class Cached:
+        def __init__(self, username: str, password: str, brand: str = "T") -> None:
+            self._password = password
+            self._token_info = "a token from an earlier sign-in"
+            self._refresh_token = REFRESH
+
+        async def login(self) -> None:
+            if self._token_info is not None:
+                return  # what pytoyoda does when a cached token is still valid
+            attempted.append(self._password)
+            if self._password != "hunter2":
+                raise ToyotaLoginError("Authentication Failed. 401, denied.")
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr("toyota_mcp.session.Controller", Cached)
+    with pytest.raises(ToyotaLoginError, match="denied"):
+        await sign_in("driver@example.com", "wrong-password")
+    assert attempted == ["wrong-password"]
+
+
+async def test_sign_in_reports_a_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Refusing:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def login(self) -> None:
+            raise ToyotaLoginError("Authentication Failed. 401, denied.")
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr("toyota_mcp.session.Controller", Refusing)
+    with pytest.raises(ToyotaLoginError, match="denied"):
+        await sign_in("driver@example.com", "wrong")
 
 
 async def test_controller_signs_in_from_the_saved_session(store: SessionStore) -> None:
@@ -196,41 +202,42 @@ async def test_controller_without_session_or_password_says_what_to_do(store: Ses
             raise AssertionError("must not try")
 
     Fake.store = store
-    with pytest.raises(ToyotaLoginError, match="toyota_sign_in"):
+    with pytest.raises(ToyotaLoginError, match="toyota-mcp login"):
         await Fake("", "", brand="T").login()
 
 
 def test_login_command_saves_the_session(
     store: SessionStore, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr("toyota_mcp.login.open_browser", lambda _: True)
     monkeypatch.setattr(
-        "toyota_mcp.login.exchange",
-        lambda code: _coroutine(Session(username="driver@example.com", refresh_token=REFRESH)),
+        "toyota_mcp.login.sign_in",
+        lambda username, password: _coroutine(Session(username, REFRESH)),
     )
-    code = login.run(store, prompt=lambda _: "com.toyota.oneapp:/oauth2Callback?code=ABC")
+    code = login.run(store, ask=lambda _: "driver@example.com", ask_secret=lambda _: "hunter2")
     assert code == login.EXIT_OK
-    assert store.load() == Session(username="driver@example.com", refresh_token=REFRESH)
+    assert store.load() == Session("driver@example.com", REFRESH)
     out = capsys.readouterr().out
-    assert "driver@example.com" in out
-    assert "password was never seen" in out
+    assert "Signed in as driver@example.com" in out
+    assert "not written anywhere" in out
 
 
-def test_login_command_prints_the_url_when_no_browser_opens(
+def test_login_command_reports_a_refusal(
     store: SessionStore, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr("toyota_mcp.login.open_browser", lambda _: False)
-    login.run(store, prompt=lambda _: "")
-    assert "b2c-login.toyota-europe.com" in capsys.readouterr().out
+    def refuse(username: str, password: str) -> object:
+        raise ToyotaLoginError("Authentication Failed. 401, denied.")
+
+    monkeypatch.setattr("toyota_mcp.login.sign_in", refuse)
+    assert login.run(store, ask=lambda _: "a@b.c", ask_secret=lambda _: "x") == login.EXIT_AUTH
+    assert "refused the sign-in" in capsys.readouterr().out
+    assert store.load() is None
 
 
-def test_login_command_is_cancellable(store: SessionStore, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("toyota_mcp.login.open_browser", lambda _: True)
-
+def test_login_command_is_cancellable(store: SessionStore) -> None:
     def interrupted(_: str) -> str:
         raise KeyboardInterrupt
 
-    assert login.run(store, prompt=interrupted) == login.EXIT_CANCELLED
+    assert login.run(store, ask=interrupted) == login.EXIT_CANCELLED
     assert store.load() is None
 
 
