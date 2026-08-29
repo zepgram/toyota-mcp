@@ -1,17 +1,24 @@
 <!-- mcp-name: io.github.zepgram/toyota -->
 
-# toyota-mcp — Toyota & Lexus MCP server for Claude and other AI assistants
+<p align="center">
+  <img src="https://raw.githubusercontent.com/zepgram/toyota-mcp/main/docs/toyota-emblem.svg"
+       alt="Toyota" width="76">
+</p>
+
+<h1 align="center">toyota-mcp — Toyota &amp; Lexus MCP server for Claude and other AI assistants</h1>
+
+<p align="center">
+  <a href="https://pypi.org/project/toyota-mcp/"><img src="https://img.shields.io/pypi/v/toyota-mcp" alt="PyPI"></a>
+  <a href="https://github.com/zepgram/toyota-mcp/actions/workflows/ci.yml"><img src="https://github.com/zepgram/toyota-mcp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://pypi.org/project/toyota-mcp/"><img src="https://img.shields.io/pypi/pyversions/toyota-mcp" alt="Python"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
 
 **Ask your Toyota anything.** `toyota-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
 (MCP) server that connects a **MyToyota** or **MyLexus** Europe account to Claude,
 Claude Code, Cursor, VS Code or any MCP client — read your car's fuel level,
 range, location, trips and health, and send remote commands (lock, climate,
 charging) in plain language.
-
-[![PyPI](https://img.shields.io/pypi/v/toyota-mcp)](https://pypi.org/project/toyota-mcp/)
-[![CI](https://github.com/zepgram/toyota-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/zepgram/toyota-mcp/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/pypi/pyversions/toyota-mcp)](https://pypi.org/project/toyota-mcp/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > *"How much range is left?"* · *"Where is the car?"* · *"Is it locked?"* ·
 > *"What did the last trip consume?"* · *"What's my EV share this month?"* ·
@@ -455,6 +462,15 @@ Toyota MCP server, Lexus MCP server, MyToyota MCP, Toyota Connected Services
 API, Toyota Claude integration, connected car MCP, vehicle telemetry MCP, remote
 lock unlock MCP, EV charging MCP, Model Context Protocol car, Toyota Corolla
 RAV4 Yaris C-HR bZ4X, Claude Desktop car integration, pytoyoda MCP.
+
+## Trademarks
+
+The Toyota emblem shown above, together with Toyota, Lexus, MyToyota and MyLexus
+and all related logos and marks, are the exclusive property of Toyota Motor
+Corporation and its affiliates. All rights reserved. They appear here only to
+identify the service this tool connects to. This is an independent, unofficial
+project: it is not affiliated with, endorsed by, sponsored by, or supported by
+Toyota, and Toyota's own terms govern your account and your vehicle.
 
 ## License
 
