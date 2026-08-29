@@ -52,6 +52,9 @@ Dependency direction is strictly downward: tools → gateway/models/opendata/pla
 - **Errors**: `errors.translate` is the single mapping from pytoyoda/httpx
   exceptions to actionable messages, including Toyota's remote codes
   (40006 unknown command, 40041 vehicle not supported).
+- **Storage**: the vehicle session goes to the OS credential store, falling back
+  to a file (mode 600) when there is none — a container or a headless server.
+  `TOYOTA_SESSION_FILE` overrides the location; OAuth grants always use a file.
 - **Authentication**: Toyota exposes no third-party OAuth client, so the only
   credentials are the account's own. `toyota-mcp login` performs the mobile
   client's authorization-code flow in the user's browser and keeps only the

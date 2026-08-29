@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import warnings
+from pathlib import Path
 from typing import Any
 
 import httpx
 import jwt
 import pytest
+from keyring.errors import NoKeyringError
 from pytoyoda.controller import TokenInfo
 from pytoyoda.exceptions import ToyotaLoginError
 
@@ -52,6 +54,46 @@ def _id_token(**claims: Any) -> str:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         return jwt.encode({"uuid": "u-1", **claims}, "a" * 32, algorithm="HS256")
+
+
+def test_a_file_store_round_trips_and_is_private(tmp_path: Path) -> None:
+    path = tmp_path / "session.json"
+    store = SessionStore(file=path)
+    assert store.load() is None
+    store.save(Session(username="driver@example.com", refresh_token=REFRESH))
+    assert oct(path.stat().st_mode)[-3:] == "600"
+    assert SessionStore(file=path).load() == Session("driver@example.com", REFRESH)
+    assert store.clear() is True
+    assert store.clear() is False
+
+
+def test_a_headless_machine_falls_back_to_a_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class NoKeyring:
+        def get_password(self, *_: str) -> str:
+            raise NoKeyringError
+
+        def set_password(self, *_: str) -> None:
+            raise NoKeyringError
+
+    monkeypatch.setattr("toyota_mcp.session.keyring", NoKeyring())
+    monkeypatch.setattr("toyota_mcp.session.session_file", lambda: tmp_path / "session.json")
+    store = SessionStore()
+    assert store.load() is None
+    store.save(Session(username=None, refresh_token=REFRESH))
+    assert (tmp_path / "session.json").exists()
+    assert store.load() == Session(None, REFRESH)
+
+
+def test_the_session_file_can_be_pointed_at_explicitly(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("TOYOTA_SESSION_FILE", str(tmp_path / "elsewhere.json"))
+    store = SessionStore()
+    store.save(Session(username=None, refresh_token=REFRESH))
+    assert (tmp_path / "elsewhere.json").exists()
+    assert store.location.endswith("elsewhere.json")
 
 
 def test_store_round_trip_and_clear(store: SessionStore) -> None:

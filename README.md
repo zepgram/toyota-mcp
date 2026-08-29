@@ -130,6 +130,19 @@ clients and issued tokens are kept in `~/.local/state/toyota-mcp/oauth.json`
 (mode 600) so a restart does not disconnect anyone; access tokens last an hour
 and refresh silently.
 
+### With Docker
+
+```bash
+docker build -t toyota-mcp --build-arg VERSION=0.2.1 .
+docker run --rm -it -v toyota-mcp:/data toyota-mcp login          # once
+docker run -d --name toyota-mcp -v toyota-mcp:/data -p 127.0.0.1:8787:8787 \
+  toyota-mcp --http https://toyota.example.com --host 0.0.0.0 --access-code "$CODE"
+```
+
+A container has no credential store, so the session and the grants live in
+`/data` — keep it as a volume or signing in again is the price of a restart.
+`TOYOTA_SESSION_FILE` moves the session file elsewhere.
+
 ## Authentication
 
 Toyota has no third-party API programme: there is no developer portal, no
