@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The package version is the git tag:
 tagging `vX.Y.Z` publishes `X.Y.Z` to PyPI and creates the GitHub release.
 
+## [0.3.4] — 2026-08-30
+
+### Changed
+- The sign-in page and the README now show the Toyota emblem instead of a
+  generic car outline: an unbranded mark on a page asking for MyToyota
+  credentials reads as a phishing form. The emblem is used nominatively and
+  both surfaces carry the notice that licenses it — the mark is the exclusive
+  property of Toyota Motor Corporation, it identifies the service this tool
+  connects to, and this project is independent and unendorsed.
+
 ## [0.3.3] — 2026-08-29
 
 ### Added
