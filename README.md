@@ -216,7 +216,7 @@ returning misleading nulls.
 ```bash
 git clone https://github.com/zepgram/toyota-mcp && cd toyota-mcp
 uv sync
-uv run pytest                       # 121 tests, no network
+uv run pytest                       # 119 tests, no network
 uv run ruff check && uv run ruff format --check
 uv run mypy src tests
 ```
