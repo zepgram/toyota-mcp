@@ -27,8 +27,9 @@ COMMANDS_INSTRUCTIONS = _BASE_INSTRUCTIONS + (
 )
 
 USAGE = (
-    "usage: toyota-mcp                   start the MCP server on stdio\n"
-    "       toyota-mcp doctor [--dump]   check credentials and vehicle support\n"
+    "usage: toyota-mcp                      start the MCP server on stdio\n"
+    "       toyota-mcp doctor [--dump]      check credentials and vehicle support\n"
+    "       toyota-mcp probe <command> ...  send one raw remote command (see probe --help)\n"
     "       toyota-mcp --version"
 )
 
@@ -92,6 +93,10 @@ def main() -> None:
         from toyota_mcp import doctor
 
         raise SystemExit(doctor.run(dump="--dump" in arguments[1:]))
+    if arguments and arguments[0] == "probe":
+        from toyota_mcp import probe
+
+        raise SystemExit(probe.run(arguments[1:]))
     if arguments:
         print(USAGE, file=sys.stderr)
         raise SystemExit(2)

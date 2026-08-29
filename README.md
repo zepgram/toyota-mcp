@@ -217,7 +217,7 @@ returning misleading nulls.
 ```bash
 git clone https://github.com/zepgram/toyota-mcp && cd toyota-mcp
 uv sync
-uv run pytest                       # 121 tests, no network
+uv run pytest                       # 127 tests, no network
 uv run ruff check && uv run ruff format --check
 uv run mypy src tests
 ```
@@ -228,6 +228,15 @@ Pre-release, run the live smoke tests with real credentials:
 
 ```bash
 uv run pytest -m live
+```
+
+Check which raw command strings your car's backend accepts — Toyota's vocabulary
+differs from the documented one (pytoyoda#274) and only a live probe settles it.
+Every command is physical, so run it next to the car:
+
+```bash
+uvx toyota-mcp probe headlight-on --watch lights
+uvx toyota-mcp probe find-vehicle --beeps 2
 ```
 
 Debug interactively with the MCP Inspector:
