@@ -26,6 +26,19 @@ jobs:
           jq --arg v "$version" '.version = $v | .packages[].version = $v' server.json > server.tmp
           mv server.tmp server.json
           jq -r '"publishing \(.name) \(.version) — package \(.packages[0].identifier) \(.packages[0].version)"' server.json
+      # The PyPI release runs in parallel and the registry checks the package exists.
+      - name: Wait for the package to appear on PyPI
+        run: |
+          version="$(jq -r .version server.json)"
+          for _ in $(seq 1 40); do
+            if curl -sfo /dev/null "https://pypi.org/pypi/toyota-mcp/${version}/json"; then
+              echo "toyota-mcp ${version} is on PyPI"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "toyota-mcp ${version} never appeared on PyPI" >&2
+          exit 1
       - name: Install mcp-publisher
         run: |
           curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
