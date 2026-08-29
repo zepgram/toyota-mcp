@@ -66,5 +66,5 @@ async def test_osm_provider_has_no_fuel_prices(opendata_stub: OpenDataStub) -> N
     opendata = OpenData("osm", transport=httpx.MockTransport(opendata_stub.handler))
     with pytest.raises(OpenDataUnavailable) as excinfo:
         await opendata.fuel_stations(47.9, 1.9, 5, "e10", 3)
-    assert "TOYOTA_OPEN_DATA=fr" in str(excinfo.value)
+    assert "--addresses fr" in str(excinfo.value)
     assert opendata_stub.requests == []

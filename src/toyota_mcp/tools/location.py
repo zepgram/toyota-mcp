@@ -13,8 +13,8 @@ def register(mcp: MCPServer) -> None:
     async def toyota_get_location(ctx: Context[AppContext]) -> LocationReport:
         """Last parked position of the vehicle: coordinates, Google Maps link, address.
 
-        Use for: where is the car? The address needs TOYOTA_OPEN_DATA (osm or
-        fr). The position updates only when the car
+        Use for: where is the car? The address needs the server started with
+        --addresses osm or fr. The position updates only when the car
         parks — while driving it shows the last parking spot; cite
         freshness.vehicle_reported_at when answering.
         """

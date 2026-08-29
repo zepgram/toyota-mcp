@@ -52,8 +52,13 @@ def offline_server(gateway: VehicleGateway) -> MCPServer:
 
 
 @pytest.fixture
+def read_only_server(gateway: VehicleGateway) -> MCPServer:
+    return create_server(gateway, remote_commands=False)
+
+
+@pytest.fixture
 def command_server(command_gateway: VehicleGateway) -> MCPServer:
-    return create_server(command_gateway, remote_commands=True)
+    return create_server(command_gateway)
 
 
 COMMAND_TOOLS = {
@@ -81,23 +86,25 @@ async def test_tools_list_contract(server: MCPServer) -> None:
     async with Client(server) as client:
         listing = await client.list_tools()
     tools = {tool.name: tool for tool in listing.tools}
-    assert set(tools) == EXPECTED_TOOLS
+    assert set(tools) == EXPECTED_TOOLS | COMMAND_TOOLS
     for tool in tools.values():
         assert tool.name.startswith("toyota_")
         assert tool.annotations is not None
-        assert tool.annotations.read_only_hint is True
+        assert tool.annotations.read_only_hint is (tool.name in EXPECTED_TOOLS)
         assert tool.annotations.open_world_hint is False
         assert tool.output_schema is not None
         assert tool.description
 
 
-async def test_commands_are_opt_in(server: MCPServer, command_server: MCPServer) -> None:
-    async with Client(server) as client:
-        default_tools = {tool.name for tool in (await client.list_tools()).tools}
+async def test_read_only_removes_every_command(
+    read_only_server: MCPServer, command_server: MCPServer
+) -> None:
+    async with Client(read_only_server) as client:
+        read_only_tools = {tool.name for tool in (await client.list_tools()).tools}
     async with Client(command_server) as client:
         listing = (await client.list_tools()).tools
     command_tools = {tool.name: tool for tool in listing if tool.name in COMMAND_TOOLS}
-    assert not default_tools & COMMAND_TOOLS
+    assert read_only_tools == EXPECTED_TOOLS
     assert set(command_tools) == COMMAND_TOOLS
     for name, tool in command_tools.items():
         assert tool.annotations is not None
@@ -384,7 +391,7 @@ async def test_get_climate(server: MCPServer) -> None:
     assert content["preset"]["duration_minutes"] == 20.0
     assert content["preset"]["options"]["front_defroster"] is False
     assert content["preset"]["options"]["driver_seat"] == "off"
-    assert "TOYOTA_REMOTE_COMMANDS" in content["note"]
+    assert "toyota_start_climate" in content["note"]
 
 
 async def test_get_climate_not_supported(
@@ -531,7 +538,7 @@ async def test_find_fuel_stations(server: MCPServer) -> None:
 async def test_find_fuel_stations_disabled(offline_server: MCPServer) -> None:
     result = await _call(offline_server, "toyota_find_fuel_stations")
     assert result.is_error
-    assert "TOYOTA_OPEN_DATA" in result.content[0].text
+    assert "--addresses" in result.content[0].text
 
 
 async def test_get_location_never_reported(

@@ -81,17 +81,31 @@ specific car supports. Exit codes: `0` ok · `2` config · `3` auth ·
 | `TOYOTA_VIN` | no | — | Selects one vehicle when several share the account |
 | `TOYOTA_BRAND` | no | `T` | `T` Toyota, `L` Lexus |
 | `TOYOTA_USE_METRIC` | no | `true` | `false` switches to miles/gallons |
-| `TOYOTA_OPEN_DATA` | no | `off` | `osm` adds addresses worldwide (OpenStreetMap); `fr` adds French addresses and fuel prices (see below) |
-| `TOYOTA_REMOTE_COMMANDS` | no | `false` | `true` registers the remote command tools (see below) |
-| `TOYOTA_PLACES` | no | — | named places, `home=43.6045,1.4440;work=43.6290,1.3630`: positions within 200 m are labelled |
+
+Environment variables carry the **account** only. Features are command-line
+options, so they are visible in `toyota-mcp --help` and in your host's `args`:
+
+| Option | Default | Description |
+|---|---|---|
+| `--read-only` | off | register only the read tools — no lock, trunk, lights, climate or charging commands |
+| `--addresses osm\|fr` | off | turn coordinates into addresses: `osm` worldwide (OpenStreetMap), `fr` France (also enables fuel prices). Off by default because it sends the car's position to that service |
+| `--places SPEC` | — | named places, `"home=43.6045,1.4440;work=43.6290,1.3630"`: positions within 200 m are labelled |
+
+```json
+"toyota": {
+  "command": "uvx",
+  "args": ["toyota-mcp", "--addresses", "osm", "--places", "home=43.6045,1.4440"],
+  "env": { "TOYOTA_USERNAME": "you@example.com", "TOYOTA_PASSWORD": "your-password" }
+}
+```
 
 A local `.env` file works too (see `.env.example`). Credentials never touch disk
 otherwise; tokens live in memory only.
 
 ## Available tools
 
-By default every tool is **read-only** (`readOnlyHint: true`) and nothing can
-actuate the vehicle. Remote commands exist but are opt-in — see below.
+Read tools are `readOnlyHint: true`. The remote commands below are registered
+unless the server runs with `--read-only`.
 
 | Tool | Example question | Key fields |
 |---|---|---|
@@ -109,9 +123,9 @@ actuate the vehicle. Remote commands exist but are opt-in — see below.
 | `toyota_find_fuel_stations` | *Cheapest station near the car?* | cheapest stations for a fuel around the car (France, open data) |
 | `toyota_refresh_data` | *I just parked — refresh.* | bounded cloud re-fetch (never wakes the car) |
 
-## Remote commands (optional)
+## Remote commands
 
-Set `TOYOTA_REMOTE_COMMANDS=true` to register the write tools:
+Registered by default; start with `--read-only` to leave them out:
 
 | Tool | Effect | Annotation |
 |---|---|---|
@@ -153,12 +167,12 @@ cheapest fuel when the tank is low — from the tools above.
 
 ## Addresses and fuel prices (optional)
 
-`TOYOTA_OPEN_DATA` turns coordinates into addresses on the parked position and
-on trip start/end points — no account, no key:
+`--addresses` turns coordinates into addresses on the parked position and on
+trip start/end points — no account, no key:
 
-| Value | Addresses | Fuel prices |
+| Option | Addresses | Fuel prices |
 |---|---|---|
-| `off` (default) | — | — |
+| (default) | — | — |
 | `osm` | worldwide, OpenStreetMap Nominatim (throttled to 1 request/s per its usage policy, results cached) | — |
 | `fr` | France, national address base (`api-adresse.data.gouv.fr`) | `toyota_find_fuel_stations`, prices self-reported by stations to `data.economie.gouv.fr` |
 
@@ -205,7 +219,7 @@ returning misleading nulls.
 - Accounts with MFA/2FA cannot authenticate.
 - Toyota retains roughly **12 months** of trip history server-side.
 - Lock/door status can lag reality; every answer self-reports its age.
-- Remote commands are off unless `TOYOTA_REMOTE_COMMANDS=true`.
+- `--read-only` removes every remote command.
 
 ## Troubleshooting
 

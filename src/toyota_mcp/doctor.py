@@ -13,7 +13,7 @@ from pytoyoda.controller import Controller
 from pytoyoda.exceptions import ToyotaLoginError
 from pytoyoda.models.vehicle import Vehicle
 
-from toyota_mcp.config import Settings
+from toyota_mcp.config import ServerOptions, Settings
 from toyota_mcp.gateway import vehicle_label
 
 EXIT_OK = 0
@@ -60,7 +60,8 @@ class RecordingController(Controller):
         return payload
 
 
-def run(dump: bool = False) -> int:
+def run(dump: bool = False, options: ServerOptions | None = None) -> int:
+    options = options or ServerOptions()
     try:
         settings = Settings()
     except ValidationError as exc:
@@ -68,10 +69,10 @@ def run(dump: bool = False) -> int:
             variable = "TOYOTA_" + "_".join(str(part) for part in error["loc"]).upper()
             print(f"CONFIG  {variable}: {error['msg']}")
         return EXIT_CONFIG
-    return asyncio.run(_diagnose(settings, dump))
+    return asyncio.run(_diagnose(settings, dump, options))
 
 
-async def _diagnose(settings: Settings, dump: bool) -> int:
+async def _diagnose(settings: Settings, dump: bool, options: ServerOptions) -> int:
     RecordingController.captured.clear()
     client = MyT(
         username=settings.username,
@@ -119,7 +120,7 @@ async def _diagnose(settings: Settings, dump: bool) -> int:
             print(f"API     data fetch failed ({type(exc).__name__}): {exc}")
             return EXIT_API
         print(f"OK      full data fetch in {time.perf_counter() - started:.1f}s")
-        _print_tool_table(selected, settings)
+        _print_tool_table(selected, options)
 
         if dump:
             _write_dump(RecordingController.captured)
@@ -137,7 +138,7 @@ def _pick(vehicles: list[Vehicle[Any]], vin: str | None) -> Vehicle[Any] | None:
     return None
 
 
-def _print_tool_table(vehicle: Vehicle[Any], settings: Settings) -> None:
+def _print_tool_table(vehicle: Vehicle[Any], options: ServerOptions) -> None:
     dashboard = vehicle.dashboard
     climate = vehicle.climate_settings
     rows = [
@@ -178,20 +179,20 @@ def _print_tool_table(vehicle: Vehicle[Any], settings: Settings) -> None:
         ),
         (
             "toyota_find_fuel_stations",
-            settings.open_data == "fr",
-            "set TOYOTA_OPEN_DATA=fr (French fuel prices)",
+            options.addresses == "fr",
+            "start with --addresses fr (French fuel prices)",
         ),
         ("toyota_refresh_data", True, ""),
         (
             "toyota_lock_doors / unlock_doors / lock_trunk / unlock_trunk / find_car / "
             "sound_horn / close_windows / charge_now / wake_vehicle",
-            settings.remote_commands,
-            "set TOYOTA_REMOTE_COMMANDS=true (opt-in; the car may reject some)",
+            not options.read_only,
+            "started with --read-only",
         ),
         (
             "toyota_start_climate / stop_climate",
-            settings.remote_commands and climate is not None and climate.temperature is not None,
-            "TOYOTA_REMOTE_COMMANDS=true and a remote-climate-enabled vehicle",
+            not options.read_only and climate is not None and climate.temperature is not None,
+            "needs a remote-climate-enabled vehicle (and not --read-only)",
         ),
     ]
     for tool, available, reason in rows:

@@ -24,7 +24,7 @@ FUEL_PRICES_SOURCE = (
     "(data.economie.gouv.fr, live flow)."
 )
 FUEL_PRICES_FRANCE_ONLY = (
-    "Fuel prices are only available in France — set TOYOTA_OPEN_DATA=fr to enable them."
+    "Fuel prices are only available in France — start the server with --addresses fr."
 )
 FuelKind = Literal["e10", "sp95", "sp98", "e85", "gazole", "gplc"]
 

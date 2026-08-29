@@ -12,16 +12,62 @@
       "registryType": "pypi",
       "identifier": "toyota-mcp",
       "version": "0.1.0",
-      "transport": { "type": "stdio" },
+      "transport": {
+        "type": "stdio"
+      },
       "environmentVariables": [
-        { "name": "TOYOTA_USERNAME", "description": "MyToyota account email", "isRequired": true, "isSecret": false },
-        { "name": "TOYOTA_PASSWORD", "description": "MyToyota account password", "isRequired": true, "isSecret": true },
-        { "name": "TOYOTA_VIN", "description": "VIN selector when several vehicles share the account", "isRequired": false, "isSecret": false },
-        { "name": "TOYOTA_BRAND", "description": "T for Toyota (default), L for Lexus", "isRequired": false, "isSecret": false },
-        { "name": "TOYOTA_USE_METRIC", "description": "true (default) for km/L, false for miles/gallons", "isRequired": false, "isSecret": false },
-        { "name": "TOYOTA_OPEN_DATA", "description": "osm adds worldwide addresses, fr adds French addresses and fuel prices (default off)", "isRequired": false, "isSecret": false },
-        { "name": "TOYOTA_REMOTE_COMMANDS", "description": "true registers the remote command tools (default false)", "isRequired": false, "isSecret": false },
-        { "name": "TOYOTA_PLACES", "description": "named places, e.g. home=43.6045,1.4440;work=43.6290,1.3630", "isRequired": false, "isSecret": false }
+        {
+          "name": "TOYOTA_USERNAME",
+          "description": "MyToyota account email",
+          "isRequired": true,
+          "isSecret": false
+        },
+        {
+          "name": "TOYOTA_PASSWORD",
+          "description": "MyToyota account password",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "TOYOTA_VIN",
+          "description": "VIN selector when several vehicles share the account",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "TOYOTA_BRAND",
+          "description": "T for Toyota (default), L for Lexus",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "TOYOTA_USE_METRIC",
+          "description": "true (default) for km/L, false for miles/gallons",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "named",
+          "name": "--read-only",
+          "description": "register only the read tools",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--addresses",
+          "description": "osm (worldwide addresses) or fr (French addresses and fuel prices)",
+          "isRequired": false,
+          "valueHint": "osm"
+        },
+        {
+          "type": "named",
+          "name": "--places",
+          "description": "named places, e.g. home=43.6045,1.4440;work=43.6290,1.3630",
+          "isRequired": false,
+          "valueHint": "home=lat,lon"
+        }
       ]
     }
   ]

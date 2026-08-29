@@ -26,8 +26,8 @@ def register(mcp: MCPServer) -> None:
         """Cheapest stations selling a given fuel around the car's last parked position.
 
         Use for: where can I fill up cheaply near the car? France only:
-        prices come from the French government open-data feed and need
-        TOYOTA_OPEN_DATA=fr.
+        prices come from the French government open-data feed and need the
+        server started with --addresses fr.
         """
         context = ctx.request_context.lifespan_context
         if context.opendata is None:

@@ -26,7 +26,7 @@ def register(mcp: MCPServer) -> None:
         """Most recent trip: distance, duration, consumption, hybrid mode split, places.
 
         Use for: how was the last trip? what did the last drive consume?
-        Start/end addresses need TOYOTA_OPEN_DATA (osm or fr).
+        Start/end addresses need the server started with --addresses osm or fr.
         """
         context = ctx.request_context.lifespan_context
         trip, freshness = await context.gateway.last_trip()

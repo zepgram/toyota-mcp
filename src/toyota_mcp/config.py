@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from typing import Literal
 
 from pydantic import SecretStr, field_validator
@@ -5,8 +6,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from toyota_mcp.places import Places
 
+Addresses = Literal["off", "osm", "fr"]
+
 
 class Settings(BaseSettings):
+    """Account configuration, from TOYOTA_* environment variables or a .env file."""
+
     model_config = SettingsConfigDict(env_prefix="TOYOTA_", env_file=".env", extra="ignore")
 
     username: str
@@ -14,15 +19,6 @@ class Settings(BaseSettings):
     vin: str | None = None
     brand: Literal["T", "L"] = "T"
     use_metric: bool = True
-    open_data: Literal["off", "osm", "fr"] = "off"
-    remote_commands: bool = False
-    places: str = ""
-
-    @field_validator("places")
-    @classmethod
-    def places_must_parse(cls, value: str) -> str:
-        Places.parse(value)
-        return value
 
     @field_validator("username")
     @classmethod
@@ -30,3 +26,12 @@ class Settings(BaseSettings):
         if "@" not in value:
             raise ValueError("must be the MyToyota account email address")
         return value
+
+
+@dataclass(frozen=True)
+class ServerOptions:
+    """Feature options, from the command line."""
+
+    read_only: bool = False
+    addresses: Addresses = "off"
+    places: Places = field(default_factory=Places)

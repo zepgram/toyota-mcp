@@ -25,12 +25,36 @@ WATCHABLE: tuple[Watch, ...] = ("lights", "doors")
 POLL_INTERVAL = 5.0
 
 
+def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument("command", help="raw command string, e.g. headlight-on or find-vehicle")
+    parser.add_argument("--beeps", type=int, default=0, help="beepCount to send (omitted when 0)")
+    parser.add_argument("--watch", choices=WATCHABLE, help="poll this status block afterwards")
+    parser.add_argument("--watch-seconds", type=int, default=20, help="how long to poll")
+    return parser
+
+
 def run(
     arguments: list[str],
     controller_class: type[Controller] = Controller,
     poll_interval: float = POLL_INTERVAL,
 ) -> int:
-    args = _parser().parse_args(arguments)
+    parser = add_arguments(
+        argparse.ArgumentParser(
+            prog="toyota-mcp probe",
+            description=(
+                "Send one raw remote command to the vehicle and print Toyota's answer. "
+                "Every command is physical: run it next to the car."
+            ),
+        )
+    )
+    return execute(parser.parse_args(arguments), controller_class, poll_interval)
+
+
+def execute(
+    args: argparse.Namespace,
+    controller_class: type[Controller] = Controller,
+    poll_interval: float = POLL_INTERVAL,
+) -> int:
     try:
         settings = Settings()
     except ValidationError as exc:
@@ -49,21 +73,6 @@ def run(
             poll_interval=poll_interval,
         )
     )
-
-
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="toyota-mcp probe",
-        description=(
-            "Send one raw remote command to the vehicle and print Toyota's answer. "
-            "Every command is physical: run it next to the car."
-        ),
-    )
-    parser.add_argument("command", help="raw command string, e.g. headlight-on or find-vehicle")
-    parser.add_argument("--beeps", type=int, default=0, help="beepCount to send (omitted when 0)")
-    parser.add_argument("--watch", choices=WATCHABLE, help="poll this status block afterwards")
-    parser.add_argument("--watch-seconds", type=int, default=20, help="how long to poll")
-    return parser
 
 
 async def _probe(

@@ -13,12 +13,12 @@ tagging `vX.Y.Z` publishes `X.Y.Z` to PyPI and creates the GitHub release.
   trips, trip summary (rolling window or calendar period), health (warning
   lights, oil indicators, notifications, service history), climate, charging
   (plug-in hybrids and EVs), fuel stations (France), refresh.
-- Remote commands (opt-in `TOYOTA_REMOTE_COMMANDS=true`): lock/unlock doors,
+- Remote commands (`--read-only` leaves them out): lock/unlock doors,
   lock/unlock trunk, find car (hazard lights), sound horn, close windows,
   start/stop remote climate, charge now, wake the vehicle — every command
   previews with `confirm=false`, checks Toyota's acknowledgement and verifies the
   car-reported outcome.
-- `TOYOTA_OPEN_DATA` (`osm` worldwide addresses, `fr` French addresses + fuel
-  prices), `TOYOTA_PLACES` named places, the `vehicle_briefing` prompt.
+- `--addresses osm|fr` (worldwide or French addresses, French fuel prices),
+  `--places` named places, the `vehicle_briefing` prompt.
 - `toyota-mcp doctor` (credentials, vehicles, tool availability) and
   `toyota-mcp probe` (raw command strings against the backend).

@@ -54,17 +54,17 @@ CAPABILITIES_NOTE = (
     "(Toyota's two flag sets disagree on the same car) — only a live command proves support."
 )
 CLIMATE_NOTE = (
-    "Remote pre-conditioning state plus the preset a remote start would apply. Starting or "
-    "stopping it needs the command tools (TOYOTA_REMOTE_COMMANDS=true)."
+    "Remote pre-conditioning state plus the preset a remote start would apply; "
+    "toyota_start_climate / toyota_stop_climate act on it."
 )
 HYBRID_BREAKDOWN_NOTE = (
     "Toyota hybrid coaching split of the trip: electric-only driving, battery charging, "
     "eco and power driving."
 )
 OPEN_DATA_DISABLED = (
-    "Open-data enrichment is disabled. Set TOYOTA_OPEN_DATA=osm (OpenStreetMap addresses, "
-    "worldwide) or fr (French national address base plus fuel prices) — it sends the car's "
-    "position to that service."
+    "Address enrichment is off. Start the server with --addresses osm (OpenStreetMap, "
+    "worldwide) or --addresses fr (French address base plus fuel prices) — it sends the "
+    "car's position to that service."
 )
 LightState = Literal["on", "off", "unknown"]
 CommandStatus = Literal["needs_confirmation", "verified", "accepted", "failed"]
@@ -74,8 +74,8 @@ ELECTRIC_NOT_APPLICABLE = (
     "for plug-in hybrids and electric vehicles."
 )
 ELECTRIC_NOT_REPORTED = (
-    "The vehicle has not reported its charging state yet — try toyota_wake_vehicle when "
-    "remote commands are enabled, or ask again later."
+    "The vehicle has not reported its charging state yet — try toyota_wake_vehicle, or ask "
+    "again later."
 )
 CHARGING_UNTESTED_NOTE = (
     "Charging data follows pytoyoda's model of Toyota's electric endpoint; field semantics "
@@ -525,10 +525,10 @@ class LocationReport(BaseModel):
     longitude: float
     place_label: str | None = Field(default=None, description="Toyota's place name, if any.")
     place: str | None = Field(
-        default=None, description="Named place from TOYOTA_PLACES within 200 m, e.g. 'home'."
+        default=None, description="Named place from --places within 200 m, e.g. 'home'."
     )
     address: str | None = Field(
-        default=None, description="Postal address; requires TOYOTA_OPEN_DATA (osm or fr)."
+        default=None, description="Postal address; needs --addresses osm or fr."
     )
     google_maps_url: str
     freshness: Freshness
@@ -557,9 +557,9 @@ class LocationReport(BaseModel):
 class TripPlace(BaseModel):
     latitude: float | None
     longitude: float | None
-    place: str | None = Field(default=None, description="Named place from TOYOTA_PLACES.")
+    place: str | None = Field(default=None, description="Named place from --places.")
     address: str | None = Field(
-        default=None, description="Postal address; requires TOYOTA_OPEN_DATA (osm or fr)."
+        default=None, description="Postal address; needs --addresses osm or fr."
     )
 
 

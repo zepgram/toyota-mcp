@@ -7,7 +7,8 @@ means adding data, not plumbing.
 ## Layers
 
 ```
-config.py      Settings from TOYOTA_* env / .env (pydantic-settings), validated once.
+config.py      Settings: the account, from TOYOTA_* env / .env (pydantic-settings).
+               ServerOptions: features, from the command line (server.build_parser).
 gateway.py     The only code that talks to Toyota: login, one MyT client, snapshot
                cache, single-flight locking, stale-while-error, login cooldown,
                remote commands, verification polling. Wraps pytoyoda's controller
@@ -18,8 +19,8 @@ tools/         One module per topic; each tool is a thin async function that cal
                the gateway and builds a report. tools/commands.py holds the
                declarative command specs.
 opendata.py    Optional enrichment providers (addresses, fuel prices) behind
-               TOYOTA_OPEN_DATA; fail-open.
-places.py      Named places (TOYOTA_PLACES) → "home" / "work" labels.
+               --addresses; fail-open.
+places.py      Named places (--places) → "home" / "work" labels.
 prompts.py     MCP prompts (vehicle_briefing).
 server.py      MCPServer assembly, opt-ins, CLI entry (doctor / probe).
 doctor.py      Connectivity and capability diagnosis.  probe.py  Raw command probe.
@@ -34,8 +35,9 @@ Dependency direction is strictly downward: tools → gateway/models/opendata/pla
 - **Freshness**: every report carries `fetched_at`, `age_seconds`, `source`
   (`live` / `cache` / `stale_cache`) and, when Toyota provides it,
   `vehicle_reported_at`. Snapshots live 5 min (15 for health).
-- **Read-only by default**: without `TOYOTA_REMOTE_COMMANDS=true` no tool has
-  `readOnlyHint: false` and no request other than GET reaches Toyota.
+- **Commands are tools like the others** (`readOnlyHint: false`, `destructiveHint`
+  where physical): `--read-only` removes them all, and then no request other
+  than GET reaches Toyota.
 - **Commands**: `confirm=false` previews and sends nothing. A sent command is
   acknowledged (`returnCode 000000`, else `failed`), the car is asked to report
   (wake request), and the outcome is polled for up to 40 s:
@@ -47,7 +49,7 @@ Dependency direction is strictly downward: tools → gateway/models/opendata/pla
   (40006 unknown command, 40041 vehicle not supported).
 - **Privacy**: pytoyoda's debug logging (full HTTP exchanges) and httpx INFO
   logging are silenced; coordinates, VINs and payloads are never logged;
-  enrichment providers only receive coordinates when enabled.
+  enrichment providers only receive coordinates when `--addresses` is set.
 
 ## Extension points
 
@@ -56,7 +58,8 @@ Dependency direction is strictly downward: tools → gateway/models/opendata/pla
 | a read tool | a snapshot key + extractor in `gateway.py`, a report in `models.py`, a tool in `tools/<topic>.py`, a fixture-backed test |
 | a remote command | one `CommandSpec` in `tools/commands.py` (`state`/`expected` for stateful commands, none for momentary ones) plus its evidence row below |
 | an enrichment provider | a `Provider` value and a method in `opendata.py`; gate it in the tool that uses it |
-| a configuration knob | a field in `config.py` (validated), `README`, `.env.example`, `server.json` |
+| an account setting | a field on `Settings` (env), `README`, `.env.example`, `server.json` |
+| a feature option | an argument in `server.build_parser`, a field on `ServerOptions`, `README`, `server.json` |
 
 ## Evidence — EU backend command vocabulary
 
