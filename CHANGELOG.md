@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The package version is the git tag:
 tagging `vX.Y.Z` publishes `X.Y.Z` to PyPI and creates the GitHub release.
 
+## [0.3.3] — 2026-08-29
+
+### Added
+- The sign-in page states plainly that the address and password are sent to
+  Toyota and never written down, and carries the trademark notice: Toyota,
+  Lexus and their marks belong to Toyota Motor Corporation, and this project is
+  independent and unaffiliated. The page follows the visitor's light or dark
+  theme, fits a phone, and asks search engines not to index it.
+
 ## [0.3.2] — 2026-08-29
 
 ### Fixed

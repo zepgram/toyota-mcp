@@ -115,6 +115,13 @@ with the `[X.Y.Z]` section of `CHANGELOG.md` and the distributions attached.
 `server.json` (MCP registry manifest) carries the same version and is updated
 by hand in the release commit.
 
+## Trademarks
+
+The sign-in page shows an original mark, never Toyota's. Redistributing the
+Toyota logo inside a package everyone installs is trademark use that a notice
+does not license; the names appear only nominatively, to say which service the
+server talks to, alongside an explicit statement of non-affiliation.
+
 ## Backlog (deliberately not built)
 
 - Charging schedules as commands (`RESERVE_CHARGE`, `SET_CHARGING_TIME`): the

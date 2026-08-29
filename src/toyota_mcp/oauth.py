@@ -249,48 +249,95 @@ class OwnerAuthorizationServer(
         }
 
 
+MARK = """<svg viewBox="0 0 64 40" role="img" aria-label="Vehicle" width="56" height="35">
+ <ellipse cx="32" cy="20" rx="30" ry="18" fill="none" stroke="currentColor" stroke-width="3"/>
+ <ellipse cx="32" cy="13" rx="11" ry="7" fill="none" stroke="currentColor" stroke-width="3"/>
+ <ellipse cx="32" cy="24" rx="19" ry="8" fill="none" stroke="currentColor" stroke-width="3"
+          transform="rotate(90 32 24)"/>
+</svg>"""
+
+LEGAL = """
+ <hr>
+ <footer>
+  <p><strong>Nothing you type here is kept.</strong> The email address and password are sent
+  to Toyota to obtain a session token, and are never written to disk, logged, or shared. Only
+  that token is stored, so this server can talk to your vehicle without asking again; remove
+  it at any time and the access is gone.</p>
+  <p>Toyota, Lexus, MyToyota and MyLexus, together with their logos and marks, are the
+  exclusive property of Toyota Motor Corporation and its affiliates. All rights reserved.
+  This is an independent, unofficial tool: it is not affiliated with, endorsed by, sponsored
+  by, or supported by Toyota, and the names are used only to say which service it works with.
+  Toyota's own terms govern your account and your vehicle.</p>
+  <p class="who">Served by <a href="https://github.com/zepgram/toyota-mcp" target="_blank"
+   rel="noopener">toyota-mcp</a>, running on the machine you or its operator control.</p>
+ </footer>
+"""
+
 PAGE = """<!doctype html>
-<title>Connect your Toyota</title>
+<html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{title} · toyota-mcp</title>
 <style>
- body {{ font: 16px/1.5 system-ui, sans-serif; margin: 0; display: grid; place-items: center;
-        min-height: 100vh; background: #f6f6f7; color: #1a1a1a }}
- main {{ background: #fff; padding: 2rem; border-radius: 12px; width: min(32rem, 92vw);
-         box-shadow: 0 1px 3px rgba(0,0,0,.12) }}
- h1 {{ font-size: 1.25rem; margin: 0 0 .25rem }}
- p {{ margin: 0 0 1rem; color: #555 }}
- ol {{ color: #555; padding-left: 1.2rem; margin: 0 0 1rem }}
- li {{ margin-bottom: .4rem }}
- input[type=text], input[type=email], input[type=password] {{ width: 100%; padding: .6rem;
-      font-size: 1rem; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box }}
- label {{ display: block; padding: .6rem; border: 1px solid #ddd; border-radius: 8px;
-          margin-bottom: .5rem; cursor: pointer }}
- label:hover {{ border-color: #1a1a1a }}
- .primary, button {{ display: block; text-align: center; margin-top: 1rem; width: 100%;
-            padding: .7rem; font-size: 1rem; border: 0; border-radius: 8px;
-            background: #1a1a1a; color: #fff; cursor: pointer; text-decoration: none }}
- .error {{ color: #b00020; margin: 0 0 1rem }}
- small {{ color: #777 }}
+ :root {{ color-scheme: light dark;
+   --bg: #f4f4f5; --card: #fff; --ink: #18181b; --muted: #52525b; --line: #e4e4e7;
+   --accent: #18181b; --accent-ink: #fff; --danger: #b91c1c; --danger-bg: #fef2f2 }}
+ @media (prefers-color-scheme: dark) {{ :root {{
+   --bg: #09090b; --card: #18181b; --ink: #fafafa; --muted: #a1a1aa; --line: #27272a;
+   --accent: #fafafa; --accent-ink: #18181b; --danger: #fca5a5; --danger-bg: #2a1215 }} }}
+ * {{ box-sizing: border-box }}
+ body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 1.5rem;
+   background: var(--bg); color: var(--ink);
+   font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif }}
+ main {{ width: min(30rem, 100%); background: var(--card); border: 1px solid var(--line);
+   border-radius: 16px; padding: 2rem; box-shadow: 0 1px 2px rgba(0,0,0,.06) }}
+ .mark {{ color: var(--ink); opacity: .9; margin-bottom: 1rem }}
+ h1 {{ font-size: 1.375rem; line-height: 1.3; margin: 0 0 .5rem; letter-spacing: -.01em }}
+ .intro {{ margin: 0 0 1.5rem; color: var(--muted) }}
+ label.field {{ display: block; margin-bottom: .75rem }}
+ label.field span {{ display: block; font-size: .8125rem; font-weight: 600; margin-bottom: .3rem }}
+ input[type=text], input[type=email], input[type=password] {{ width: 100%; padding: .7rem .8rem;
+   font: inherit; color: var(--ink); background: var(--bg);
+   border: 1px solid var(--line); border-radius: 10px }}
+ input:focus {{ outline: 2px solid var(--accent); outline-offset: 1px }}
+ button {{ width: 100%; margin-top: .5rem; padding: .8rem; font: inherit; font-weight: 600;
+   border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-ink);
+   cursor: pointer }}
+ button:hover {{ opacity: .9 }}
+ .choice {{ display: flex; gap: .75rem; align-items: center; padding: .8rem;
+   border: 1px solid var(--line); border-radius: 10px; margin-bottom: .5rem; cursor: pointer }}
+ .choice:hover {{ border-color: var(--accent) }}
+ .choice strong {{ display: block }}
+ .choice small {{ color: var(--muted) }}
+ .error {{ padding: .75rem .9rem; margin-bottom: 1rem; border-radius: 10px;
+   background: var(--danger-bg); color: var(--danger); font-size: .9375rem }}
+ hr {{ border: 0; border-top: 1px solid var(--line); margin: 1.75rem 0 1rem }}
+ footer {{ font-size: .75rem; line-height: 1.55; color: var(--muted) }}
+ footer p {{ margin: 0 0 .6rem }}
+ footer a {{ color: inherit }}
+ .who {{ opacity: .8 }}
 </style>
+<body>
 <main>
+ <div class="mark">{mark}</div>
  <h1>{title}</h1>
- <p>{intro}</p>
+ <p class="intro">{intro}</p>
  {error}
  {body}
+ {legal}
 </main>
+</body></html>
 """
 ERROR = '<p class="error">{message}</p>'
 
 SIGN_IN_BODY = """
  <form method="post">
-  <input type="email" name="username" placeholder="MyToyota email address"
-         autocomplete="username" autofocus required>
-  <input type="password" name="password" placeholder="MyToyota password"
-         autocomplete="current-password" required style="margin-top:.5rem">
-  <button type="submit">Sign in</button>
+  <label class="field"><span>MyToyota email address</span>
+   <input type="email" name="username" autocomplete="username" autofocus required></label>
+  <label class="field"><span>Password</span>
+   <input type="password" name="password" autocomplete="current-password" required></label>
+  <button type="submit">Sign in and continue</button>
  </form>
- <p style="margin-top:1rem"><small>Your credentials go straight to Toyota and are never
- written down: this server keeps only the session token Toyota returns. Accounts with
- two-factor authentication are not supported by Toyota's vehicle API.</small></p>
 """
 
 VEHICLE_BODY = """
@@ -300,6 +347,6 @@ VEHICLE_BODY = """
  </form>
 """
 VEHICLE_CHOICE = """
-  <label><input type="radio" name="vin" value="{vin}" {checked} required>
-   <strong>{name}</strong> — {model} · …{suffix}</label>
+  <label class="choice"><input type="radio" name="vin" value="{vin}" {checked} required>
+   <span><strong>{name}</strong><small>{model} · VIN …{suffix}</small></span></label>
 """
