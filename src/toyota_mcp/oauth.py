@@ -249,12 +249,26 @@ class OwnerAuthorizationServer(
         }
 
 
-MARK = """<svg viewBox="0 0 64 40" role="img" aria-label="Vehicle" width="56" height="35">
- <ellipse cx="32" cy="20" rx="30" ry="18" fill="none" stroke="currentColor" stroke-width="3"/>
- <ellipse cx="32" cy="13" rx="11" ry="7" fill="none" stroke="currentColor" stroke-width="3"/>
- <ellipse cx="32" cy="24" rx="19" ry="8" fill="none" stroke="currentColor" stroke-width="3"
-          transform="rotate(90 32 24)"/>
-</svg>"""
+# The Toyota emblem, from the CC0-licensed Simple Icons set. The mark itself remains
+# the property of Toyota Motor Corporation; the page says so.
+_TOYOTA_PATH = (
+    "M12 3.848C5.223 3.848 0 7.298 0 12c0 4.702 5.224 8.152 12 8.152S24 16.702 24 12c0-4.70"
+    "2-5.223-8.152-12-8.152zm7.334 3.839c0 1.08-1.725 1.913-4.488 2.246-.26-2.58-1.005-4.27"
+    "9-1.963-4.913 2.948.184 6.45 1.227 6.45 2.667zM12 16.401c-.96 0-1.746-1.5-1.808-4.389."
+    "577.047 1.18.072 1.808.072.628 0 1.23-.025 1.807-.072-.061 2.89-.847 4.389-1.807 4.389"
+    "zm0-6.308c-.59 0-1.155-.019-1.69-.054.261-1.728.92-3.15 1.69-3.15.77 0 1.428 1.422 1.6"
+    "89 3.15-.535.034-1.099.054-1.689.054zm-.882-5.075c-.956.633-1.706 2.333-1.964 4.915C6."
+    "391 9.6 4.665 8.767 4.665 7.687c0-1.44 3.504-2.49 6.453-2.669zM2.037 11.68a5.265 5.265"
+    " 0 011.048-3.164c.27 1.547 2.522 2.881 5.972 3.37V12c0 3.772.879 6.203 2.087 6.97-5.10"
+    "7-.321-9.107-3.48-9.107-7.29zm10.823 7.29c1.207-.767 2.087-3.198 2.087-6.97v-.115c3.44"
+    "7-.488 5.704-1.826 5.972-3.37a5.26 5.26 0 011.049 3.165c-.004 3.81-4.008 6.969-9.109 7"
+    ".29z"
+)
+MARK = (
+    '<svg viewBox="0 0 24 24" role="img" aria-label="Toyota" width="64" height="64"'
+    ' xmlns="http://www.w3.org/2000/svg">'
+    f'<path fill="currentColor" d="{_TOYOTA_PATH}"/></svg>'
+)
 
 LEGAL = """
  <hr>
@@ -263,11 +277,12 @@ LEGAL = """
   to Toyota to obtain a session token, and are never written to disk, logged, or shared. Only
   that token is stored, so this server can talk to your vehicle without asking again; remove
   it at any time and the access is gone.</p>
-  <p>Toyota, Lexus, MyToyota and MyLexus, together with their logos and marks, are the
-  exclusive property of Toyota Motor Corporation and its affiliates. All rights reserved.
-  This is an independent, unofficial tool: it is not affiliated with, endorsed by, sponsored
-  by, or supported by Toyota, and the names are used only to say which service it works with.
-  Toyota's own terms govern your account and your vehicle.</p>
+  <p>The emblem above, Toyota, Lexus, MyToyota and MyLexus, together with all related logos
+  and marks, are the exclusive property of Toyota Motor Corporation and its affiliates.
+  All rights reserved. They appear here only to identify the service this tool connects to.
+  This is an independent, unofficial project: it is not affiliated with, endorsed by,
+  sponsored by, or supported by Toyota, and Toyota's own terms govern your account and your
+  vehicle.</p>
   <p class="who">Served by <a href="https://github.com/zepgram/toyota-mcp" target="_blank"
    rel="noopener">toyota-mcp</a>, running on the machine you or its operator control.</p>
  </footer>
