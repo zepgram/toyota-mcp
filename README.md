@@ -200,7 +200,7 @@ returning misleading nulls.
 | `Toyota appears to have changed this API endpoint…` | Toyota migrated a route. Update toyota-mcp / pytoyoda. |
 | `No parked location has been reported…` | The car has never pushed a position (or lacks the capability). |
 | `No vehicles are attached to this MyToyota account.` | Pair the car in the MyToyota mobile app first. |
-| `…does not know that remote command (CTP-REMOTE-40006)` | The command string is not in Toyota's current vocabulary (observed for `find-vehicle`, `hazard-off`, `headlight-off`). Nothing reached the car. |
+| `…does not know that remote command (CTP-REMOTE-40006)` | The command string is not in Toyota's current vocabulary (observed for `find-vehicle`, `engine-start`, `engine-stop`, `hazard-off`, `headlight-off`). Nothing reached the car. |
 | `…does not support that remote command (CTP-REMOTE-40041)` | Toyota knows the command but this car lacks the feature (observed for `headlight-on` on a 2026 Corolla). Nothing reached the car. |
 
 ## Security & privacy
