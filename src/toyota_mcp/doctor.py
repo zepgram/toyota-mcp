@@ -9,6 +9,7 @@ from typing import Any, ClassVar
 
 from pydantic import ValidationError
 from pytoyoda.client import MyT
+from pytoyoda.const import VEHICLE_GUID_ENDPOINT
 from pytoyoda.exceptions import ToyotaLoginError
 from pytoyoda.models.vehicle import Vehicle
 
@@ -87,6 +88,22 @@ def run(dump: bool = False, options: ServerOptions | None = None) -> int:
     return asyncio.run(_diagnose(settings, dump, options))
 
 
+async def _vehicles_in_raw_response(client: MyT) -> int | None:
+    """How many vehicles Toyota actually returned, whatever pytoyoda made of them.
+
+    An empty vehicle list has two very different causes: an account with no car, or a
+    pytoyoda that cannot parse the response and quietly yields nothing. Telling them
+    apart is the difference between "check the MyToyota app" and "upgrade a dependency",
+    so the raw payload is counted before blaming the account.
+    """
+    try:
+        payload = await client._api.controller.request_json("GET", VEHICLE_GUID_ENDPOINT)
+    except Exception:  # une sonde qui echoue ne doit pas changer le diagnostic
+        return None
+    vehicles = payload.get("payload") if isinstance(payload, dict) else None
+    return len(vehicles) if isinstance(vehicles, list) else None
+
+
 async def _diagnose(settings: Settings, dump: bool, options: ServerOptions) -> int:
     RecordingController.captured.clear()
     client = MyT(
@@ -115,7 +132,14 @@ async def _diagnose(settings: Settings, dump: bool, options: ServerOptions) -> i
             print(f"API     vehicle list failed ({type(exc).__name__}): {exc}")
             return EXIT_API
         if not vehicles:
-            print("VEHICLE no vehicles on this account — check the MyToyota mobile app.")
+            returned = await _vehicles_in_raw_response(client)
+            if returned:
+                print(
+                    f"VEHICLE Toyota returned {returned} vehicle(s) but pytoyoda parsed none — "
+                    "the installed pytoyoda cannot read this response; upgrade it."
+                )
+            else:
+                print("VEHICLE no vehicles on this account — check the MyToyota mobile app.")
             return EXIT_NO_VEHICLE
         for vehicle in vehicles:
             print(

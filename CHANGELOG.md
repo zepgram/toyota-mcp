@@ -5,6 +5,20 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The package version is the git tag:
 tagging `vX.Y.Z` publishes `X.Y.Z` to PyPI and creates the GitHub release.
 
+## [0.3.5] — 2026-09-18
+
+### Fixed
+- pytoyoda 5.2.0 reads Toyota's vehicle list as empty — the response parses to
+  no payload at all — so a perfectly healthy account looked like an account
+  with no car. The floor moves to 5.2.1, which parses it, and the lock file
+  follows: a `uv sync --locked` was still pulling the version that cannot read
+  the answer.
+- `doctor` blamed the account for an empty vehicle list without checking
+  whether Toyota had actually returned one. It now counts the cars in the raw
+  response first and says which of the two it is: an account with no vehicle,
+  or a pytoyoda that cannot read the response. The wrong one sends the owner
+  into the MyToyota app looking for a problem that is not there.
+
 ## [0.3.4] — 2026-08-30
 
 ### Changed

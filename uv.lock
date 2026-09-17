@@ -1148,7 +1148,7 @@ wheels = [
 
 [[package]]
 name = "pytoyoda"
-version = "5.2.0"
+version = "5.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "arrow" },
@@ -1160,9 +1160,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyjwt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dd/98/7f6955b9b5504d4bfe8236714eec7a73f39fc0785330bccd7595d6e8eb0a/pytoyoda-5.2.0.tar.gz", hash = "sha256:4dd71e4b80e96ca24edf23e8a82343b99c01927611fcffecc7760f74119d82aa", size = 53087, upload-time = "2026-07-23T15:31:46.962Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/77/cf/d0d4b1184df474ec3962783938cde4e9801d09d2fb9cc7e25eb762cef58c/pytoyoda-5.2.1.tar.gz", hash = "sha256:f1a04fc6f7f96bde07c89c2ed84e5d71ce3f66ea8e5c76bf181b75cfc3318f6e", size = 55314, upload-time = "2026-09-17T21:19:23.44Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d6/6c/cf24edea2fffb614cd87caba2eec52459e93aa338fb42074509e2f667c2d/pytoyoda-5.2.0-py3-none-any.whl", hash = "sha256:f7cc0adeb8023f8df7981bb3dc1f7e3e2c23a588c86ba31be2e9c2c2750aab9a", size = 68458, upload-time = "2026-07-23T15:31:45.563Z" },
+    { url = "https://files.pythonhosted.org/packages/14/ad/4635bb28075071382e601f1c0ae4bd7bf4d097869a17b38ad9a7e7c41472/pytoyoda-5.2.1-py3-none-any.whl", hash = "sha256:a26c3abd87bc2214ba818804e00a33d03e2cf007fecd0b6a0600c167c76ca0d4", size = 70759, upload-time = "2026-09-17T21:19:22.061Z" },
 ]
 
 [[package]]
@@ -1443,7 +1443,7 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7,<1" },
     { name = "mcp", specifier = ">=2.1,<3" },
     { name = "pydantic-settings", specifier = ">=2.7,<3" },
-    { name = "pytoyoda", specifier = ">=5.2.0,<6" },
+    { name = "pytoyoda", specifier = ">=5.2.1,<6" },
 ]
 
 [package.metadata.requires-dev]
